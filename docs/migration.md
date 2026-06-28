@@ -75,12 +75,36 @@ docker stop <docker-name>
 ```
 This is reversible: `docker start <docker-name>` rolls back instantly (step 7).
 
-### 5. Start the Podman unit
+### 5. Pre-pull, start, and open the firewall
 
+**Pre-pull the image first.** Podman's image store is *separate from Docker's*, so
+the first start pulls the image fresh. On a Pi that can exceed systemd's 90s
+start-timeout and flash a (self-recovering) "failed" — avoid it by pulling first:
 ```bash
+podman pull <image>                # e.g. docker.io/jellyfin/jellyfin:latest
 systemctl --user daemon-reload
+systemctl --user reset-failed <app>.service 2>/dev/null
 systemctl --user start <app>
 ```
+
+**Open the firewall.** Rootless Podman does **not** bypass `ufw` the way Docker
+did — Docker injected its own iptables rules, so published ports were reachable
+regardless of `ufw`. Under Podman an active `ufw` blocks LAN access until you
+allow the port explicitly (run `sudo` on its own line, never inside a pasted block):
+```bash
+sudo ufw allow <port>/tcp
+```
+> ⚠️ This caught us live on Jellyfin: the container was healthy and served fine on
+> the Pi itself (`curl localhost:8096` → `302`), but the browser couldn't reach it
+> until `sudo ufw allow 8096/tcp`. Ports per container:
+
+| Container | `ufw allow` |
+|---|---|
+| jellyfin | `8096/tcp` |
+| qbittorrent | `8080/tcp` |
+| atvloadly | `5533/tcp` |
+| omada | `8088,8043,8843/tcp` + `19810,27001,29810/udp` + `29811:29817/tcp` |
+| netbird | none (no published ports) |
 
 ### 6. Verify (the gate — don't proceed until this is green)
 

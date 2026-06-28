@@ -104,6 +104,10 @@ mkdir -p ~/containers/jellyfin/config ~/containers/jellyfin/cache
 
 systemctl --user daemon-reload
 systemctl --user start jellyfin
+
+# rootless Podman respects ufw (Docker bypassed it). If ufw is active, open the
+# web port or the LAN can't reach it (run sudo on its own line):
+sudo ufw allow 8096/tcp
 ```
 
 Open `http://<host>:8096`, run the setup wizard, and point libraries at
@@ -176,6 +180,14 @@ seasons present in the subtitle source are touched. Put `JELLYFIN_API_KEY` in yo
   with 3.7 GiB RAM. **Caveat:** Raspberry Pi OS ships with the memory cgroup
   disabled, so the limit is silently discarded until you append
   `cgroup_enable=memory cgroup_memory=1` to `/boot/firmware/cmdline.txt` and reboot.
+- **Firewall (Podman-specific, verified).** Docker silently bypassed `ufw`;
+  rootless Podman does not. With `ufw` active you **must** `sudo ufw allow 8096/tcp`
+  or the LAN can't reach the Web UI (the Pi itself still can). Restrict to the LAN
+  with `sudo ufw allow from 192.168.1.0/24 to any port 8096` if you prefer.
+- **First-start image pull.** Podman's image store is separate from Docker's, so
+  the first `start` pulls `jellyfin:latest` fresh and may exceed systemd's 90s
+  start-timeout (it self-recovers via `Restart=always`). `podman pull` it first to
+  avoid the flash.
 - **Deviation — no `ReadOnly` rootfs.** Not verified safe for this image, so left off.
 - **`/data` is read-only** — Jellyfin never writes to your media. If you later use
   features that write back (e.g. `.nfo` metadata), drop `:ro` on that Volume.
@@ -185,8 +197,14 @@ seasons present in the subtitle source are touched. Put `JELLYFIN_API_KEY` in yo
   transcoding works as-is.
 
 ---
-_⚠️ UNTESTED on this host — Quadlet translation of the tested Docker stack
-([docker repo](https://github.com/hshamsaldin/docker/tree/main/containers/jellyfin)).
-The host-side fstab/UAS-quirk and `ManageSubtitles.sh` steps are runtime-agnostic
-and carry over verified; the rootless Podman deploy (UID mapping, mem cgroup)
-needs host verification. Replace with `Tested on: <host>, <YYYY-MM-DD>` once run._
+_Tested on: `raspberrypi` (Pi 4B, Debian 13 Trixie, Podman 5.4.2), 2026-06-28 —
+**migrated live from Docker.** Data copied to `~/containers/jellyfin/{config,cache}`,
+unit installed rootless; `systemctl --user start jellyfin` comes up **healthy**
+(`Startup complete`, plugins + libraries intact) and serves on `:8096`. Two
+Podman-specific gotchas hit + fixed (see Notes): (1) `ufw` was active and blocked
+LAN access until `sudo ufw allow 8096/tcp` — the Pi itself reached it fine
+(`curl localhost:8096` → 302) throughout; (2) the first start pulled the image
+fresh and tripped the 90s start-timeout, then self-recovered via `Restart=always`.
+Host-side fstab/UAS-quirk + `ManageSubtitles.sh` carry over from the
+[docker repo](https://github.com/hshamsaldin/docker/tree/main/containers/jellyfin).
+Remaining: `mem_limit` stays discarded until the memory cgroup is enabled (see Notes)._
