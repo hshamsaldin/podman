@@ -34,6 +34,12 @@ SeccompProfile=unconfined
 #     read-write (verified, mode 666) — no related fix needed for those.
 UserNS=keep-id
 User=1000:1000
+# The app binds directly to port 80 INSIDE the container (the Docker stack
+# never noticed because Docker ran it as real root). As non-root UID 1000,
+# binding a port <1024 needs this capability — verified live: without it,
+# "failed to listen: listen tcp4 0.0.0.0:80: bind: permission denied" and an
+# immediate crash loop, regardless of which HOST port is published.
+AddCapability=NET_BIND_SERVICE
 
 # --- web UI — LAN-wide (needed from other devices) ---
 PublishPort=5533:80

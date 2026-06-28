@@ -22,19 +22,25 @@ Upstream: [bitxeno/atvloadly](https://github.com/bitxeno/atvloadly).
   sudo apt install -y avahi-daemon
   sudo systemctl enable --now avahi-daemon
   ```
-- **Rootless access to the host sockets + USB.** See the Notes — this is the most
-  likely container to need **rootful Podman** (`sudo podman`) because device
-  pairing (usbmuxd) and the host dbus/avahi sockets are awkward to reach from a
-  rootless user namespace.
+- **Rootless works here — verified, no rootful needed.** The host dbus
+  (`/var/run/dbus/system_bus_socket`) and avahi (`/var/run/avahi-daemon/socket`)
+  sockets are both mode `666` (world read-write) on a standard install — any
+  rootless container can reach them with no extra config. The actual blockers
+  were elsewhere — see Deploy and Notes.
 
 ## Deploy
-
-> ⚠️ UNTESTED on the host — verify before trusting (and see the rootless caveat above).
 
 ```bash
 cp atvloadly.container ~/.config/containers/systemd/
 systemctl --user daemon-reload
 systemctl --user start atvloadly
+
+# ONE-TIME, only if you're migrating existing data from the Docker stack:
+# Docker ran as real root, so anything it wrote into /etc/atvloadly (besides
+# files you created yourself) is root-owned. Rootless Podman's container
+# identity is your real UID (via keep-id below), not real root, so it can't
+# touch those leftovers until you reclaim them:
+sudo chown -R "$(whoami):$(whoami)" /etc/atvloadly
 ```
 
 State lives at the host path `/etc/atvloadly` (mounted as `/data`): pairing files,
@@ -138,18 +144,34 @@ sudo systemctl enable --now atvloadly-refresh.timer
 - **Security deviation (intentional):** runs `SeccompProfile=unconfined` and mounts
   host `dbus`/`avahi` sockets — required for USB/usbmuxd pairing. Do **not** add
   `NoNewPrivileges` / `DropCapability=ALL` here; it breaks pairing.
-- **Rootless caveat (Podman-specific, the big one).** USB device pairing via
-  usbmuxd and the host dbus/avahi sockets are easy under Docker (root daemon) but
-  awkward rootless: the host sockets are root/group-owned and a rootless user
-  namespace may not reach them, and USB access needs the device readable by your
-  user. If pairing fails rootless, run this **one** stack rootful instead — put
-  `atvloadly.container` in `/etc/containers/systemd/` and manage it with
-  `sudo systemctl` (system Quadlet), or test socket/group permissions first.
-  ⚠️ UNTESTED either way.
-- **`/etc/atvloadly` is root-owned.** Rootless Podman writes into it as your
-  mapped user; if you hit permission errors on `/data`, that ownership is why
-  (another reason this stack may want rootful). The backup/restore commands use
-  `sudo` for exactly this reason.
+- **Rootless works fine here — verified, despite looking like the most likely
+  candidate to need rootful.** Three real fixes were needed, none of them
+  "switch to rootful":
+  1. **`UserNS=keep-id` + `User=1000:1000`.** `/etc/atvloadly` is owned by your
+     real host user, mode `700` (owner-only — verified live). Docker accessed
+     it as real root (bypasses all permission checks); a rootless container's
+     own identity must literally equal the host owner's UID to get in at all.
+     This image has no `PUID`/`PGID` switching of its own (unlike
+     jellyfin/qbittorrent), so without this it runs as an unmapped identity
+     and hits "Permission denied" on every read/write — same class of bug as
+     qBittorrent's original issue.
+  2. **`AddCapability=NET_BIND_SERVICE`.** The app binds directly to port 80
+     *inside* the container — invisible under Docker (real root can bind any
+     port), fatal under non-root rootless: `failed to listen: listen tcp4
+     0.0.0.0:80: bind: permission denied`, instant crash loop, regardless of
+     which **host** port is published. Confirmed live by running the exact
+     `podman run` command in the foreground to see the real stderr (systemd
+     was just showing `status=1` with no detail, and `podman logs` lost the
+     output as fast as it crash-looped).
+  3. **A one-time `chown` of pre-existing data** (Deploy) — only needed if
+     you're migrating data Docker already wrote, since some of it is
+     root-owned (e.g. `PlumeImpactor/lib/arm64-v8a/*.so`,
+     `DeveloperDiskImages/tvOS_DDI/*`). A fresh install with no existing data
+     wouldn't hit this.
+  - **dbus/avahi sockets needed no fix at all** — verified `mode 666` (world
+    read-write) on this host, reachable from any rootless container with zero
+    extra configuration. The thing that *looked* like the rootless blocker
+    wasn't one.
 - **Edit the systemd unit before enabling:** `atvloadly-refresh.service` ships
   with `User=YOUR_USER` / `/home/YOUR_USER/...` placeholders — set your real user
   and path first.
