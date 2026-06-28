@@ -91,6 +91,11 @@ podman volume export netbird-client -o netbird-$(date +%F).tar
   no extra host-side privilege needed, unlike gluetun's nftables requirement.
 
 ---
-_⚠️ UNTESTED on this host — Quadlet translation of the tested Docker stack
-([docker repo](https://github.com/hshamsaldin/docker/tree/main/containers/netbird))._
-_Replace with `Tested on: <host>, <YYYY-MM-DD>` once Deploy + Upgrade have run._
+_Tested on: `raspberrypi` (Pi 4B, Debian 13 Trixie, Podman 5.4.2), 2026-06-28 —
+migrated live from Docker as a fresh peer (Docker's named volume doesn't carry
+over, registered with a new setup key per the chosen "re-register" path).
+Came up with `Management: Connected`, `Signal: Connected`, `Relays: 4/4
+Available`, and a real `NetBird IP` assigned. Required adding `NET_RAW` on top
+of `NET_ADMIN` — see Notes. Remaining manual step: remove the old (now
+offline) Docker-era peer entry from the NetBird dashboard, and update anything
+that referenced its old NetBird IP._
