@@ -1,0 +1,3 @@
+# Own bridge for Jellyfin. Quadlet creates a Podman network `systemd-jellyfin`.
+[Network]
+NetworkName=jellyfin_net

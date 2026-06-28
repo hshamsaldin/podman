@@ -1,0 +1,39 @@
+# atvloadly — Apple TV IPA sideloading.
+# IMPORTANT: SeccompProfile=unconfined and the host dbus/avahi mounts are
+# required for device pairing — do not remove or tighten them.
+# Install: cp atvloadly.container ~/.config/containers/systemd/
+#          systemctl --user daemon-reload && systemctl --user start atvloadly
+[Unit]
+Description=atvloadly — Apple TV IPA sideloading
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=docker.io/bitxeno/atvloadly:latest
+ContainerName=atvloadly
+HostName=atvloadly
+AutoUpdate=registry
+
+# Scheduler/cron runs on local time, not UTC.
+Environment=TZ=Europe/Amsterdam
+
+# --- security DEVIATION (intentional): unconfined seccomp for usbmuxd/device
+#     access; caps intentionally NOT dropped and NoNewPrivileges NOT set, like
+#     the Docker stack — tightening them breaks pairing. ---
+SeccompProfile=unconfined
+
+# --- web UI — LAN-wide (needed from other devices) ---
+PublishPort=5533:80
+
+# --- storage ---
+Volume=/etc/atvloadly:/data                       # ALL persistent state (pairing,
+                                                  # Apple ID session, app.db, settings)
+Volume=/var/run/dbus:/var/run/dbus                # host dbus — device discovery
+Volume=/var/run/avahi-daemon:/var/run/avahi-daemon # host avahi — Bonjour/mDNS discovery
+Volume=/etc/localtime:/etc/localtime:ro           # match host local time
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

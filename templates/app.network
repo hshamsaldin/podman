@@ -1,0 +1,8 @@
+# Copy to containers/<app>/<app>.network (only if the app needs its own bridge).
+# Quadlet creates a real Podman network named `systemd-<app>` from this.
+# Reference it from the .container with:  Network=<app>.network
+[Network]
+NetworkName=app_net
+# Driver=bridge
+# Subnet=10.89.0.0/24
+# Internal=false

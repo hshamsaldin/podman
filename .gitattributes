@@ -1,0 +1,8 @@
+# Shell scripts and Quadlet unit files must stay LF — they run inside Linux
+# containers / on the host (systemd parses the units), and CRLF breaks the
+# shebang, `$'\r'` errors, and systemd unit parsing. Force LF on checkout.
+*.sh text eol=lf
+*.container text eol=lf
+*.network text eol=lf
+*.volume text eol=lf
+*.pod text eol=lf

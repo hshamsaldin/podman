@@ -1,0 +1,12 @@
+[Unit]
+Description=atvloadly host-triggered app refresh + notify
+Wants=network-online.target
+After=network-online.target
+# Podman is daemonless — there is no docker.service to wait on. The refresh
+# script just hits the container's published WebUI on localhost:5533 and
+# notifies on failure, so it tolerates the container not being up yet.
+
+[Service]
+Type=oneshot
+User=YOUR_USER
+ExecStart=/home/YOUR_USER/atvloadly-refresh.sh

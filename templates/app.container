@@ -1,0 +1,46 @@
+# Copy to containers/<app>/<app>.container and fill in.
+# Install with:  cp <app>.container ~/.config/containers/systemd/
+#                systemctl --user daemon-reload && systemctl --user start <app>
+[Unit]
+Description=<app> — one-line description
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=docker.io/vendor/image:latest    # fully qualified + :latest (needed for AutoUpdate)
+ContainerName=app                       # = folder/app name
+HostName=app
+AutoUpdate=registry                     # `podman auto-update` upgrades it
+
+# --- security baseline ---
+NoNewPrivileges=true
+DropCapability=ALL
+# AddCapability=NET_ADMIN               # uncomment only the caps you truly need
+Memory=512m
+PidsLimit=200
+
+# --- config / secrets (values come from .env, which is gitignored) ---
+EnvironmentFile=%h/containers/app/.env
+Environment=TZ=Europe/Amsterdam
+# Environment=PUID=1000
+# Environment=PGID=1000
+# UserNS=keep-id                        # map your host UID 1:1 (for PUID/PGID bind mounts)
+
+# --- storage: default to a bind mount under ~/containers/<app> ---
+Volume=%h/containers/app/data:/var/lib/app
+
+# --- networking: own bridge by default; bind published ports to localhost ---
+PublishPort=127.0.0.1:8080:80
+Network=app.network
+
+# --- health (lets systemd/podman know it's actually working) ---
+HealthCmd=curl -f http://localhost/
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target                 # start on boot (with linger enabled)

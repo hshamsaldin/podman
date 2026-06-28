@@ -1,0 +1,60 @@
+# Omada — TP-Link Omada SDN controller.
+# Ports MUST be LAN-reachable: APs/switches/gateway adopt + inform over them, so
+# they are published on all interfaces (not bound to localhost).
+# Install: cp omada.container omada-data.volume omada-logs.volume ~/.config/containers/systemd/
+#          systemctl --user daemon-reload && systemctl --user start omada
+[Unit]
+Description=Omada SDN controller
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=docker.io/mbentley/omada-controller:latest
+ContainerName=Omada
+AutoUpdate=registry
+Ulimit=nofile=4096:8192
+PodmanArgs=--stop-timeout=60
+
+# --- ports (LAN-wide, not localhost-bound — devices must reach them) ---
+PublishPort=8088:8088                # management HTTP (redirects to HTTPS)
+PublishPort=8043:8043                # management HTTPS — the login UI
+PublishPort=8843:8843                # guest captive portal HTTPS
+PublishPort=19810:19810/udp          # device discovery (v6+)
+PublishPort=27001:27001/udp          # app discovery
+PublishPort=29810:29810/udp          # device discovery
+PublishPort=29811-29817:29811-29817  # manager / adopt / upgrade / transfer / rtty / monitor
+
+# --- config (no secrets; PUID/PGID are host-specific — adjust to your omada user) ---
+Environment=PUID=508
+Environment=PGID=508
+Environment=TZ=Europe/Amsterdam
+Environment=MANAGE_HTTP_PORT=8088
+Environment=MANAGE_HTTPS_PORT=8043
+Environment=PORTAL_HTTP_PORT=8088
+Environment=PORTAL_HTTPS_PORT=8843
+Environment=UPGRADE_HTTPS_PORT=8043
+Environment=PORT_APP_DISCOVERY=27001
+Environment=PORT_DISCOVERY=29810
+Environment=PORT_MANAGER_V1=29811
+Environment=PORT_ADOPT_V1=29812
+Environment=PORT_UPGRADE_V1=29813
+Environment=PORT_MANAGER_V2=29814
+Environment=PORT_TRANSFER_V2=29815
+Environment=PORT_RTTY=29816
+Environment=PORT_DEVICE_MONITOR=29817
+Environment=WEB_CONFIG_OVERRIDE=false
+Environment=SHOW_SERVER_LOGS=true
+Environment=SHOW_MONGODB_LOGS=false
+Environment=SSL_CERT_NAME=tls.crt
+Environment=SSL_KEY_NAME=tls.key
+
+# --- storage: named volumes (migrate the old controller data in — see README) ---
+Volume=omada-data.volume:/opt/tplink/EAPController/data
+Volume=omada-logs.volume:/opt/tplink/EAPController/logs
+
+[Service]
+Restart=always
+TimeoutStopSec=70
+
+[Install]
+WantedBy=default.target

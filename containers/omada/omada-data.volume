@@ -1,0 +1,5 @@
+# Omada controller state: DB, config, Omada ID, adopted devices.
+# A BLANK volume = a brand-new, empty controller — migrate the old data in first
+# (see README ## Notes). VolumeName pins the real name (no `systemd-` prefix).
+[Volume]
+VolumeName=omada-data

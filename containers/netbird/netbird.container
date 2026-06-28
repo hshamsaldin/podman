@@ -1,0 +1,31 @@
+# NetBird — WireGuard mesh VPN client. Registers this host as a NetBird peer.
+# Install: cp netbird.container netbird-client.volume ~/.config/containers/systemd/
+#          systemctl --user daemon-reload && systemctl --user start netbird
+[Unit]
+Description=NetBird mesh VPN client
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=docker.io/netbirdio/netbird:latest
+ContainerName=NetBird
+HostName=pi
+AutoUpdate=registry
+
+# --- security baseline ---
+NoNewPrivileges=true
+DropCapability=ALL
+AddCapability=NET_ADMIN                  # required for the WireGuard tunnel
+AddDevice=/dev/net/tun                   # WireGuard interface device
+
+# --- first registration only: uncomment, set the key, start once, then remove ---
+# Environment=NB_SETUP_KEY=<your-setup-key>
+
+# --- storage: registration state in a named volume (reused on recreate) ---
+Volume=netbird-client.volume:/var/lib/netbird
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

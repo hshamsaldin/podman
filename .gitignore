@@ -1,0 +1,7 @@
+# never commit real secrets or runtime data
+.env
+.env.*
+!.env.example
+*/data/
+**/data/
+*.tar.gz

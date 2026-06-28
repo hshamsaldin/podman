@@ -1,0 +1,4 @@
+# Named volume for NetBird's registration state (peer keys + session).
+# Quadlet would name it `systemd-netbird-client`; VolumeName pins the real name.
+[Volume]
+VolumeName=netbird-client

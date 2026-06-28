@@ -1,0 +1,44 @@
+# Jellyfin — media server.
+# Install: cp jellyfin.container jellyfin.network ~/.config/containers/systemd/
+#          systemctl --user daemon-reload && systemctl --user start jellyfin
+[Unit]
+Description=Jellyfin media server
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=docker.io/jellyfin/jellyfin:latest
+ContainerName=Jellyfin
+HostName=jellyfin
+AutoUpdate=registry
+
+# --- rootless UID mapping: map your host UID 1:1 so files stay yours ---
+# User MUST match your host `id -u`:`id -g` (and PUID/PGID in .env). Default 1000.
+UserNS=keep-id
+User=1000:1000
+
+# --- config / secrets ---
+EnvironmentFile=%h/containers/jellyfin/.env       # provides TZ (+ optional script vars)
+
+# --- security baseline ---
+NoNewPrivileges=true
+DropCapability=ALL
+Memory=2g                                         # Pi 4B has 3.7Gi; 2g leaves OS headroom
+PidsLimit=400
+
+# --- storage: app data next to the unit's data dir; media disk read-only ---
+Volume=%h/containers/jellyfin/config:/config
+Volume=%h/containers/jellyfin/cache:/cache
+# Media library — host disk mounted at /data (matches MEDIA_PATH in .env).
+# Read-only: Jellyfin never needs to write to your media.
+Volume=/data:/data:ro
+
+# --- networking ---
+PublishPort=8096:8096                             # bind 127.0.0.1:8096 if behind a proxy
+Network=jellyfin.network
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

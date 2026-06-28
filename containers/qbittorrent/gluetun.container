@@ -1,0 +1,58 @@
+# gluetun — ProtonVPN (WireGuard) tunnel. Owns the shared network namespace that
+# qBittorrent joins, so ALL torrent traffic exits via the VPN (kill switch: no
+# gluetun = no network for qBittorrent). qBittorrent's WebUI is published HERE.
+# Install: cp gluetun.container qbittorrent.container ~/.config/containers/systemd/
+#          systemctl --user daemon-reload && systemctl --user start gluetun qbittorrent
+[Unit]
+Description=gluetun — ProtonVPN WireGuard tunnel (qBittorrent's netns)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=docker.io/qmcgaw/gluetun:latest
+ContainerName=gluetun
+HostName=gluetun
+AutoUpdate=registry
+
+# --- security: gluetun needs the tun device + NET_ADMIN; DAC_OVERRIDE + CHOWN
+#     let its port-forwarding service write/chown the runtime port file ---
+NoNewPrivileges=true
+DropCapability=ALL
+AddCapability=NET_ADMIN
+AddCapability=DAC_OVERRIDE
+AddCapability=CHOWN
+AddDevice=/dev/net/tun
+Memory=256m
+PidsLimit=200
+
+# --- VPN config: secrets/values come from .env (gitignored). The .env keys use
+#     gluetun's own names, so they pass straight through via EnvironmentFile. ---
+EnvironmentFile=%h/containers/qbittorrent/.env
+Environment=VPN_SERVICE_PROVIDER=protonvpn
+Environment=VPN_TYPE=wireguard
+# On each port assign/renew, gluetun runs qbt-port.sh (in this netns, so
+# qBittorrent is on localhost:8080) to set qBittorrent's listening port.
+Environment=VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh /scripts/qbt-port.sh {{PORT}}
+# Encrypted DNS over TLS via Cloudflare (Quad9 DoT was reset on this route).
+Environment=DOT=on
+Environment=DOT_PROVIDERS=cloudflare
+
+# --- networking: qBittorrent's WebUI is published HERE (shared netns). Change
+#     to 127.0.0.1:8080:8080 to keep it localhost-only behind a proxy. ---
+PublishPort=8080:8080
+
+# --- storage: gluetun state + the port script it runs on the up-command ---
+Volume=%h/containers/qbittorrent/gluetun:/gluetun
+Volume=%h/containers/qbittorrent/scripts:/scripts:ro
+
+# --- health: confirms the tunnel is actually up and routing ---
+HealthCmd=wget -qO- https://ipinfo.io/ip
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=5
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target
