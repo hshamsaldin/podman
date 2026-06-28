@@ -16,6 +16,10 @@ AutoUpdate=registry
 NoNewPrivileges=true
 DropCapability=ALL
 AddCapability=NET_ADMIN
+# NET_RAW: NetBird needs raw sockets for ICMP-based connectivity checks.
+# Without it: "Error: status failed: up wg interface: failed to create ipv4
+# raw socket: socket: operation not permitted" (verified live).
+AddCapability=NET_RAW
 AddDevice=/dev/net/tun
 
 # --- first registration only: uncomment, set the key, start once, then remove ---

@@ -8,7 +8,7 @@ WireGuard-based mesh VPN client — registers this host as a NetBird peer.
 | **Image**    | `docker.io/netbirdio/netbird:latest`         |
 | **Web UI**   | `—` (CLI: `podman exec NetBird netbird status`) |
 | **Storage**  | `netbird-client` (named volume) → `/var/lib/netbird` |
-| **Network**  | default rootless network (no published ports) + `NET_ADMIN` / `/dev/net/tun` |
+| **Network**  | default rootless network (no published ports) + `NET_ADMIN`/`NET_RAW` / `/dev/net/tun` |
 | **Host deps**| `/dev/net/tun`                               |
 
 ## Prerequisites
@@ -82,9 +82,13 @@ podman volume export netbird-client -o netbird-$(date +%F).tar
   `podman unshare`. Re-registering with a key is simpler. ⚠️ UNTESTED.
 - **Named volume** (`netbird-client.volume`): recreating the container reuses the
   existing registration; don't delete the volume or you must re-register.
-- Keeps `NET_ADMIN` + `/dev/net/tun` (required for the WireGuard interface).
-- **Rootless WireGuard** works inside the container's user namespace; `NET_ADMIN`
-  is added within that userns, not on the host.
+- Keeps `NET_ADMIN` + `/dev/net/tun` (required for the WireGuard interface),
+  **and `NET_RAW`** (verified required — without it, `netbird status` fails
+  with `failed to create ipv4 raw socket: socket: operation not permitted`;
+  NetBird uses raw sockets for ICMP-based connectivity checks).
+- **Rootless WireGuard + raw sockets** both work inside the container's user
+  namespace; the capabilities are added within that userns, not on the host —
+  no extra host-side privilege needed, unlike gluetun's nftables requirement.
 
 ---
 _⚠️ UNTESTED on this host — Quadlet translation of the tested Docker stack
