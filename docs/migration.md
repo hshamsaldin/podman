@@ -106,6 +106,16 @@ sudo ufw allow <port>/tcp
 | omada | `8088,8043,8843/tcp` + `19810,27001,29810/udp` + `29811:29817/tcp` |
 | netbird | none (no published ports) |
 
+**`UserNS=keep-id` + `Network=container:<other>` don't mix (verified).** A
+container that joins another container's netns cannot also set up its own user
+namespace — rootless Podman fails the start with `status=126` and never creates
+the container. Symptom: the unit's own `systemctl --user status` line already
+shows `status=126` before the app gets a chance to log anything (no journal entry
+needed). If the joining container's image remaps PUID/PGID itself (most
+linuxserver/s6 images do), just drop `keep-id` — it costs nothing. If the image
+has no such logic, put both containers in a Quadlet `.pod` instead so the
+namespace is shared once, at the pod level.
+
 ### 6. Verify (the gate — don't proceed until this is green)
 
 ```bash

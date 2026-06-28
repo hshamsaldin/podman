@@ -90,6 +90,13 @@ tar czf qbittorrent-$(date +%F).tar.gz -C ~/containers/qbittorrent/config .
   own — no `PublishPort`/`Network` bridge; those live on gluetun. Always run the
   **Verify** IP check after any change; a slip that detaches qBittorrent from
   gluetun's netns would leak your real IP.
+- **No `UserNS=keep-id` on qBittorrent (verified, Podman-specific).** Rootless
+  Podman rejects `UserNS=keep-id` combined with `Network=container:gluetun` —
+  joining another container's netns can't also set up a separate user namespace
+  (the unit fails with `status=126`, container never created). This is harmless
+  here: the linuxserver/s6 image already remaps to `PUID`/`PGID` internally on its
+  own — that's what those two `.env` vars are for — so dropping `keep-id` costs
+  nothing. (Jellyfin needs `keep-id` precisely because it has no such logic.)
 - **Ordering vs. health (Podman-specific).** Docker used `depends_on: condition:
   service_healthy`. Quadlet/systemd express ordering with `Requires=`/`After=` on
   `gluetun.service`, which guarantees gluetun's container (and netns) exists first,

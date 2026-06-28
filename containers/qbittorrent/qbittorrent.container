@@ -21,9 +21,12 @@ Network=container:gluetun
 NoNewPrivileges=true
 PodmanArgs=--memory=1g --pids-limit=400
 
-# --- rootless UID mapping so downloaded files stay owned by your host user ---
-# PUID/PGID come from .env; keep-id maps your host UID 1:1 into the container.
-UserNS=keep-id
+# --- UID mapping: NOT keep-id here. The linuxserver/s6 image remaps to
+#     PUID/PGID internally on its own (that's what those .env vars are for) —
+#     and rootless Podman does not allow UserNS=keep-id together with
+#     Network=container:<other> (joining a netns can't also set up a separate
+#     user namespace). keep-id is only needed for images with no PUID/PGID
+#     logic of their own (e.g. jellyfin).
 EnvironmentFile=%h/containers/qbittorrent/.env
 Environment=WEBUI_PORT=8080
 
