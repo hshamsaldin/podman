@@ -22,6 +22,19 @@ Environment=TZ=Europe/Amsterdam
 #     the Docker stack — tightening them breaks pairing. ---
 SeccompProfile=unconfined
 
+# --- UID mapping: /etc/atvloadly is owned by your real host user, mode 700
+#     (owner-only — verified live). Docker accessed it as real root (bypasses
+#     all permission checks); rootless Podman never gets real root, so the
+#     container's OWN identity must literally be your UID. keep-id + User=
+#     do that — same pattern as jellyfin. PUID/PGID don't exist for this
+#     image (it has no such switching logic), so without this it would run
+#     as a root that doesn't match the directory's real owner and get
+#     "Permission denied" on every read/write, same class of bug as
+#     qBittorrent's original issue. host dbus/avahi sockets are world
+#     read-write (verified, mode 666) — no related fix needed for those.
+UserNS=keep-id
+User=1000:1000
+
 # --- web UI — LAN-wide (needed from other devices) ---
 PublishPort=5533:80
 
