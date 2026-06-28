@@ -114,15 +114,23 @@ just `CMD=/bin/sh` inside the container; the rest is silently swallowed (only
 shows up via `podman exec <ctr> env`, no error anywhere). Quote the *entire*
 assignment when the value has a space: `Environment="CMD=/bin/sh /script.sh {{ARG}}"`.
 
-**`UserNS=keep-id` + `Network=container:<other>` don't mix (verified).** A
-container that joins another container's netns cannot also set up its own user
-namespace — rootless Podman fails the start with `status=126` and never creates
-the container. Symptom: the unit's own `systemctl --user status` line already
-shows `status=126` before the app gets a chance to log anything (no journal entry
-needed). If the joining container's image remaps PUID/PGID itself (most
-linuxserver/s6 images do), just drop `keep-id` — it costs nothing. If the image
-has no such logic, put both containers in a Quadlet `.pod` instead so the
-namespace is shared once, at the pod level.
+**`UserNS=keep-id` + `Network=container:<other>` don't mix (verified) — use a
+`.pod`, don't just drop `keep-id`.** A container that joins another container's
+netns directly cannot also set up its own user namespace — rootless Podman
+fails the start with `status=126` and never creates the container (symptom:
+the unit's own `systemctl --user status` line already shows `status=126`
+before the app logs anything). The tempting quick fix is to drop `keep-id` and
+let the image's own PUID/PGID logic handle ownership — **don't**: without
+`keep-id`, the container's "UID 1000" maps to the rootless subuid offset (e.g.
+host UID `100999`), not your real UID `1000`, so it can no longer read/write
+any *pre-existing* bind-mounted files (confirmed live: a fully-downloaded
+torrent went "Errored" with "Permission denied" on every file). The correct
+fix is a Quadlet **`.pod`**: put `UserNS=keep-id` on the pod once, have every
+member container join via `Pod=<name>.pod` (no `UserNS=`/`Network=`/
+`PublishPort=` of its own), and PUID/PGID-based ownership maps to your real
+host UID again for every container in the pod. See
+[gluetun's README](../containers/gluetun) for the worked example, including
+how to connect a *future* container to the same shared pod.
 
 ### 6. Verify (the gate — don't proceed until this is green)
 
@@ -155,7 +163,7 @@ Then fix the unit and retry. Nothing was lost — the data wasn't touched.
 | # | Container | Why this slot | Watch out for |
 |---|-----------|---------------|---------------|
 | 1 | **jellyfin** | simplest rootless validation (bind mounts + one port) | `UserNS=keep-id` + `User=` must equal your `id -u`:`id -g`; media `/data` path |
-| 2 | **qbittorrent + gluetun** | proves netns sharing + the VPN kill switch | **run the leak/IP check** before trusting; needs `/dev/net/tun` |
+| 2 | **gluetun**, then **qbittorrent** | proves the shared-pod pattern + the VPN kill switch | deploy gluetun first, confirm the tunnel/exit-IP *before* starting qBittorrent; needs `/dev/net/tun`; `UserNS=keep-id` lives on `gluetun.pod`, not either container |
 | 3 | **netbird** | needs `NET_ADMIN`/`tun`; volume data | likely easiest to **re-register** with a fresh setup key |
 | 4 | **omada** | external-volume migration + 5.x→6.x DB jump | migrate via in-app `.cfg`; don't leap major versions in one pull |
 | 5 | **atvloadly** | **last** — most likely to need rootful | USB pairing + host dbus/avahi can be awkward rootless; may run `sudo` (system Quadlet) |

@@ -1,0 +1,17 @@
+# Copy to containers/<owner>/<name>.pod ONLY if multiple containers need to
+# share one network + user namespace (e.g. a VPN tunnel other apps ride
+# through — see containers/gluetun for the worked example). Most containers
+# do NOT need this — use app.container alone instead.
+#
+# UserNS=keep-id goes HERE, once, not on member containers: rootless Podman
+# rejects UserNS=keep-id directly on a container that also does
+# Network=container:<other> (verified: status=126, container never created).
+# Member containers join via `Pod=<name>.pod` in their own .container file and
+# inherit this pod's userns/network automatically — they should NOT set their
+# own UserNS=/Network=/PublishPort=.
+[Pod]
+PodName=app
+UserNS=keep-id
+
+# One line per port any member container needs published.
+PublishPort=127.0.0.1:8080:8080

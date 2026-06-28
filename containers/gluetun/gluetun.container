@@ -1,0 +1,70 @@
+# gluetun — ProtonVPN (WireGuard) tunnel. Shared VPN infrastructure: joins
+# gluetun.pod, which owns the network + user namespace that gluetun AND any
+# other container can ride through (today: qBittorrent; see gluetun.pod for
+# how to connect future containers). Kill switch: if this container is down,
+# every container in the pod loses its route — there is no other way out.
+# Install: cp gluetun.pod gluetun.container ~/.config/containers/systemd/
+#          systemctl --user daemon-reload && systemctl --user start gluetun
+[Unit]
+Description=gluetun — ProtonVPN WireGuard tunnel (shared VPN pod)
+Wants=network-online.target
+After=network-online.target
+# Wider restart budget — every container riding this pod also depends on this
+# one existing; give VPN reconnects/upgrades room to retry instead of
+# exhausting systemd's default 5-restarts/10s and going quiet.
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Container]
+Image=docker.io/qmcgaw/gluetun:latest
+ContainerName=gluetun
+HostName=gluetun
+AutoUpdate=registry
+Pod=gluetun.pod
+
+# --- security: gluetun needs the tun device + NET_ADMIN; DAC_OVERRIDE + CHOWN
+#     let its port-forwarding service write/chown the runtime port file ---
+NoNewPrivileges=true
+DropCapability=ALL
+AddCapability=NET_ADMIN
+AddCapability=DAC_OVERRIDE
+AddCapability=CHOWN
+AddDevice=/dev/net/tun
+PodmanArgs=--memory=256m --pids-limit=200
+
+# --- VPN config: secrets/values come from .env (gitignored). The .env keys use
+#     gluetun's own names, so they pass straight through via EnvironmentFile. ---
+EnvironmentFile=%h/containers/gluetun/.env
+Environment=VPN_SERVICE_PROVIDER=protonvpn
+Environment=VPN_TYPE=wireguard
+# On each port assign/renew, gluetun runs qbt-port.sh (in this netns, so
+# qBittorrent is reachable on localhost:8080) to set its listening port.
+# Quoted as ONE assignment — an unquoted Environment=VAR=val with spaces is
+# parsed by systemd as MULTIPLE space-separated assignments (verified: this
+# being unquoted silently dropped everything after "/bin/sh", and the port
+# sync script never fired).
+Environment="VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh /scripts/qbt-port.sh {{PORT}}"
+# Encrypted DNS over TLS via Cloudflare (Quad9 DoT was reset on this route).
+Environment=DOT=on
+Environment=DOT_PROVIDERS=cloudflare
+
+# --- networking: published on the POD (gluetun.pod), not here. ---
+
+# --- storage: gluetun's own state + the qBittorrent port-sync script (lives
+#     in qbittorrent/'s folder since it's qBittorrent-specific tooling, but
+#     gluetun is the one that runs it on each port renewal). ---
+Volume=%h/containers/gluetun/state:/gluetun
+Volume=%h/containers/qbittorrent/scripts:/scripts:ro
+
+# --- health: confirms the tunnel is actually up and routing ---
+HealthCmd=wget -qO- https://ipinfo.io/ip
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=5
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

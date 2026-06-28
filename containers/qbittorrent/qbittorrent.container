@@ -1,10 +1,10 @@
-# qBittorrent — rides entirely on gluetun's network namespace. No network stack
-# of its own: if gluetun stops or the tunnel drops, qBittorrent loses network
-# (the kill switch). Because it shares gluetun's netns, it gets NO PublishPort of
-# its own — its WebUI is published on gluetun.container instead.
+# qBittorrent — joins the shared gluetun.pod (containers/gluetun/), riding its
+# VPN-routed network + user namespace. No network stack of its own: if gluetun
+# stops or the tunnel drops, qBittorrent loses its route (the kill switch).
+# Its WebUI port is published on the POD (gluetun.pod), not here.
 [Unit]
-Description=qBittorrent (in gluetun's netns)
-# Start after gluetun and require it — sharing its netns depends on it existing.
+Description=qBittorrent (in gluetun.pod, riding the VPN)
+# Start after gluetun and require it — the pod's route depends on it existing.
 Requires=gluetun.service
 After=gluetun.service
 # Generous restart budget: if gluetun's container is torn down (a real restart,
@@ -22,26 +22,27 @@ StartLimitBurst=10
 Image=lscr.io/linuxserver/qbittorrent:latest
 ContainerName=qBittorrent
 AutoUpdate=registry
-
-# Share gluetun's netns (= Docker's `network_mode: service:gluetun`).
-Network=container:gluetun
+Pod=gluetun.pod
 
 # --- security: linuxserver/s6 image; caps intentionally NOT dropped (unverified
 #     against this image's init, like the Docker stack). NoNewPrivileges kept. ---
 NoNewPrivileges=true
 PodmanArgs=--memory=1g --pids-limit=400
 
-# --- UID mapping: NOT keep-id here. The linuxserver/s6 image remaps to
-#     PUID/PGID internally on its own (that's what those .env vars are for) —
-#     and rootless Podman does not allow UserNS=keep-id together with
-#     Network=container:<other> (joining a netns can't also set up a separate
-#     user namespace). keep-id is only needed for images with no PUID/PGID
-#     logic of their own (e.g. jellyfin).
+# --- UID mapping: keep-id is set on gluetun.pod (shared by every container in
+#     it), NOT here — UserNS=keep-id directly on a container that also did
+#     Network=container:gluetun was rejected by rootless Podman (status=126,
+#     verified). The pod-level keep-id maps your real host UID 1000 into the
+#     pod once; the s6-init still does its own PUID/PGID remap to "uid 1000"
+#     internally, which now lands on the SAME host UID 1000 as your existing
+#     downloaded files (without this, it landed on the rootless subuid offset,
+#     e.g. 100999, and every read/write to pre-existing files got "Permission
+#     denied" — confirmed live on a real torrent).
 EnvironmentFile=%h/containers/qbittorrent/.env
 Environment=WEBUI_PORT=8080
 
-# --- storage: app config + your downloads disk (DOWNLOADS_PATH from .env — set
-#     it literally here too; Quadlet does not interpolate .env into Volume=). ---
+# --- storage: app config + your downloads disk (DOWNLOADS_PATH — set it
+#     literally here too; Quadlet does not interpolate .env into Volume=). ---
 Volume=%h/containers/qbittorrent/config:/config
 Volume=/data/downloads:/downloads
 

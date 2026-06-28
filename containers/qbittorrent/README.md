@@ -5,40 +5,32 @@ WireGuard tunnel — if the VPN drops, qBittorrent has no network (kill switch).
 
 |              |                                          |
 |--------------|------------------------------------------|
-| **Upstream** | [linuxserver/qbittorrent](https://github.com/linuxserver/docker-qbittorrent) · [qdm12/gluetun](https://github.com/qdm12/gluetun) |
-| **Image**    | `lscr.io/linuxserver/qbittorrent:latest` · `docker.io/qmcgaw/gluetun:latest` |
-| **Web UI**   | `http://<host>:8080` (qBittorrent, published *on gluetun*) |
-| **Storage**  | `~/containers/qbittorrent/{config,gluetun,scripts}` (bind) · downloads disk → `/downloads` (bind) |
-| **Network**  | qBittorrent runs in **gluetun's** netns (`Network=container:gluetun`); only gluetun publishes ports |
-| **Host deps**| `/dev/net/tun` (kernel tun device — present by default on Linux) |
+| **Upstream** | [linuxserver/qbittorrent](https://github.com/linuxserver/docker-qbittorrent) |
+| **Image**    | `lscr.io/linuxserver/qbittorrent:latest` |
+| **Web UI**   | `http://<host>:8080` (published on the **pod**, not this container) |
+| **Storage**  | `~/containers/qbittorrent/{config,scripts}` (bind) · downloads disk → `/downloads` (bind) |
+| **Network**  | joins the shared **[gluetun](../gluetun) pod** (`Pod=gluetun.pod`) — see that container for the VPN tunnel itself |
+| **Host deps**| none beyond [gluetun](../gluetun)'s |
 
 ## Prerequisites
 
-- Rootless Podman ≥ 4.4 + linger — see [host setup](../../docs/host-setup.md).
-  (`Network=container:` needs ≥ 4.4.)
-- A **ProtonVPN** account with a **WireGuard** config: Proton portal →
-  *Downloads → WireGuard configuration* → choose a **P2P** server, enable
-  **Moderate NAT**, generate, and copy the `PrivateKey` into `.env` as
-  `WIREGUARD_PRIVATE_KEY`.
+- The [gluetun](../gluetun) container deployed first — it owns the pod, the
+  tunnel, and `UserNS=keep-id`. qBittorrent has nothing to configure VPN-side.
 - A downloads location on the host for the `/downloads` mount.
-- `/dev/net/tun` must exist (`ls -l /dev/net/tun`; `sudo modprobe tun` if missing).
 
 ## Deploy
 
 > ⚠️ UNTESTED on the host — verify the VPN leak check below before trusting.
 
 ```bash
-mkdir -p ~/containers/qbittorrent
-cp .env.example ~/containers/qbittorrent/.env    # edit WireGuard key, PUID/PGID, subnet
+mkdir -p ~/containers/qbittorrent/config
+cp .env.example ~/containers/qbittorrent/.env    # edit PUID/PGID/TZ
 cp -r scripts ~/containers/qbittorrent/          # qbt-port.sh, mounted into gluetun
-cp gluetun.container qbittorrent.container ~/.config/containers/systemd/
+cp qbittorrent.container ~/.config/containers/systemd/
 
-# config must be owned by your host user (rootless + keep-id):
-mkdir -p ~/containers/qbittorrent/config ~/containers/qbittorrent/gluetun
-
-# Mirror the non-interpolated bits into the units (Quadlet won't read .env for these):
-#   gluetun.container    : PublishPort=8080:8080  (or 127.0.0.1:8080:8080 behind a proxy)
+# Mirror the non-interpolated bits into the unit (Quadlet won't read .env for these):
 #   qbittorrent.container: Volume=<downloads>:/downloads  (default /data/downloads)
+# And confirm gluetun.pod (in ../gluetun) publishes 8080 for this app.
 
 systemctl --user daemon-reload
 systemctl --user start gluetun qbittorrent
@@ -83,81 +75,68 @@ tar czf qbittorrent-$(date +%F).tar.gz -C ~/containers/qbittorrent/config .
 
 ## Notes
 
-- **Two units, one folder.** Deviation from "one container = one unit": gluetun is
-  qBittorrent's inseparable VPN sidecar, so they share this folder. `gluetun.container`
-  owns the netns and ports; `qbittorrent.container` joins via `Network=container:gluetun`.
-- **The kill switch is the whole point.** qBittorrent has no network stack of its
-  own — no `PublishPort`/`Network` bridge; those live on gluetun. Always run the
-  **Verify** IP check after any change; a slip that detaches qBittorrent from
-  gluetun's netns would leak your real IP.
+- **Rides the shared [gluetun](../gluetun) pod, not its own netns.** gluetun
+  used to be qBittorrent-specific infrastructure; it's now a standalone shared
+  VPN pod any container can join (see gluetun's README for how to connect a
+  future container the same way). This container only needs `Pod=gluetun.pod`
+  in its `[Container]` section plus `Requires=`/`After=gluetun.service` — no
+  `PublishPort=`, `Network=`, or `UserNS=` of its own; the pod owns all three.
+- **The kill switch is the whole point.** qBittorrent has no network stack of
+  its own. Always run the **Verify** IP check after any change; a slip that
+  detaches it from the pod would leak your real IP.
 - **Kill-switch teardown is total, not just network loss (verified, stricter than
   Docker).** When gluetun's container is removed (manual stop, restart, image
   update), Podman removes qBittorrent's `--rm` container right along with it —
-  its netns just vanished — not merely cuts its network like Docker's version
-  did. `Restart=always` + `Requires=`/`After=` bring it back once gluetun is up
-  again; `StartLimitIntervalSec=120`/`StartLimitBurst=10` on both units gives
+  its shared netns just vanished — not merely cuts its network like Docker's
+  version did. `Restart=always` + `Requires=`/`After=` bring it back once
+  gluetun is up again; `StartLimitIntervalSec=120`/`StartLimitBurst=10` gives
   that recovery enough budget to survive a couple of quick back-to-back gluetun
   restarts (systemd's default 5-restarts/10s was exhausted testing this and left
   qBittorrent `inactive (dead)` until a manual `systemctl --user start
   qbittorrent`). If it's ever sitting inactive after a real gluetun blip:
   `systemctl --user reset-failed qbittorrent; systemctl --user start qbittorrent`.
-- **No `UserNS=keep-id` on qBittorrent (verified, Podman-specific).** Rootless
-  Podman rejects `UserNS=keep-id` combined with `Network=container:gluetun` —
-  joining another container's netns can't also set up a separate user namespace
-  (the unit fails with `status=126`, container never created). This is harmless
-  here: the linuxserver/s6 image already remaps to `PUID`/`PGID` internally on its
-  own — that's what those two `.env` vars are for — so dropping `keep-id` costs
-  nothing. (Jellyfin needs `keep-id` precisely because it has no such logic.)
+- **No `UserNS=` here at all (verified, Podman-specific — this is the whole
+  reason the pod exists).** The original design had qBittorrent join gluetun
+  directly via `Network=container:gluetun`, with `UserNS=keep-id` dropped
+  because rootless Podman rejects that combination (`status=126`, container
+  never created). But dropping `keep-id` meant qBittorrent's internal
+  `PUID=1000` landed on the rootless subuid offset (host UID `100999`) instead
+  of your real UID `1000` — every read/write to pre-existing downloaded files
+  got "Permission denied" (confirmed live on a real torrent). Moving
+  `UserNS=keep-id` to the **pod** (`gluetun.pod`) and having both containers
+  join via `Pod=` fixes this: the pod's userns is shared by every member, no
+  per-container conflict, and `PUID=1000` now correctly maps to your real host
+  UID `1000` again.
 - **Ordering vs. health (Podman-specific).** Docker used `depends_on: condition:
   service_healthy`. Quadlet/systemd express ordering with `Requires=`/`After=` on
-  `gluetun.service`, which guarantees gluetun's container (and netns) exists first,
-  but **not** that the tunnel is fully up before qBittorrent starts. That's fine:
-  the kill switch still holds (no tunnel = no traffic), and `qbt-port.sh` retries
-  for 5 min. If you want strict "wait for healthy," add a `systemd` drop-in that
-  polls `podman healthcheck run gluetun` before starting qBittorrent.
-- **WebUI is published on gluetun.** Reaching it from the LAN also needs
-  `FIREWALL_OUTBOUND_SUBNETS` (in `.env`) so gluetun doesn't drop the return
-  packets. If the WebUI is unreachable from other machines, check that subnet first.
-- **`Environment=` splits on whitespace (verified, caused a real outage).**
-  `Environment=VAR=val with spaces` is parsed by systemd as *multiple*
-  space-separated assignments, not one — so the unquoted
-  `VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh /scripts/qbt-port.sh {{PORT}}` line
-  silently became just `VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh` inside the
-  container (confirmed via `podman exec gluetun env`), so gluetun's up-command
-  ran a no-op shell and `qbt-port.sh` never fired — port-forwarding worked, but
-  qBittorrent's listening port silently went stale every time the forwarded port
-  changed. **Fixed** by quoting the whole assignment:
-  `Environment="VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh /scripts/qbt-port.sh {{PORT}}"`.
-  Any `Environment=` value with a space needs this.
-- **Port forwarding is auto-wired.** On each port assign/renew gluetun runs
-  `scripts/qbt-port.sh` (mounted at `/scripts`, via `VPN_PORT_FORWARDING_UP_COMMAND`),
-  which POSTs the new port to qBittorrent's WebUI API on `127.0.0.1:8080` (same
-  netns), retrying up to 5 min. **One-time setup:** qBittorrent → Settings → Web UI,
-  tick **"Bypass authentication for clients on localhost"**, and untick **"Use
-  UPnP/NAT-PMP"** under Connection. Verify with
-  `podman exec gluetun cat /tmp/gluetun/forwarded_port` vs qBittorrent's listening port.
-- **Security-baseline deviations** (deliberate):
-  - gluetun keeps `DropCapability=ALL` but **adds `NET_ADMIN`** + `/dev/net/tun`
-    (mandatory for WireGuard), plus **`DAC_OVERRIDE`** + **`CHOWN`** so its
-    port-forwarding service can write and `chown` the runtime port file under
-    `/tmp/gluetun`. Missing either aborts the PF service, so the up-command never runs.
-  - qBittorrent is a linuxserver/s6 image; `DropCapability=ALL`/`ReadOnly` are **not**
-    applied (unverified against its init, would risk a crash-loop). `NoNewPrivileges`
-    kept on both.
-  - Memory caps (`--memory=256m` gluetun / `1g` qBittorrent) via `PodmanArgs`. On a
-    Pi they're discarded until the memory cgroup is enabled (`cgroup_enable=memory
-    cgroup_memory=1` in `/boot/firmware/cmdline.txt` + reboot).
-- **Rootless caveats (Podman-specific).** `UserNS=keep-id` maps your host UID 1:1
-  so downloads stay yours; PUID/PGID in `.env` must equal your `id -u`/`id -g`.
-  `NET_ADMIN` + `/dev/net/tun` work inside the rootless user namespace; if WireGuard
-  fails to come up, confirm `/dev/net/tun` is readable by your user.
-- **Reverse proxy:** set `gluetun.container` `PublishPort=127.0.0.1:8080:8080` and
-  front gluetun with your proxy.
+  `gluetun.service`, which guarantees gluetun's container (and the pod's netns)
+  exists first, but **not** that the tunnel is fully up before qBittorrent
+  starts. That's fine: the kill switch still holds (no tunnel = no traffic),
+  and `qbt-port.sh` retries for 5 min.
+- **WebUI is published on the pod.** Reaching it from the LAN also needs
+  `FIREWALL_OUTBOUND_SUBNETS` (in gluetun's `.env`) so gluetun doesn't drop the
+  return packets. If the WebUI is unreachable from other machines, check that
+  subnet first.
+- **Port forwarding is auto-wired** by gluetun (`scripts/qbt-port.sh`, owned by
+  this container's folder but run by gluetun on each port renewal) — see
+  [gluetun's README](../gluetun) for the full mechanism and the
+  `Environment=` quoting fix that made it actually fire. **One-time setup:**
+  qBittorrent → Settings → Web UI, tick **"Bypass authentication for clients on
+  localhost"**, and untick **"Use UPnP/NAT-PMP"** under Connection.
+- **Security-baseline deviation (deliberate).** This is a linuxserver/s6 image;
+  `DropCapability=ALL`/`ReadOnly` are **not** applied (unverified against its
+  init, would risk a crash-loop). `NoNewPrivileges` is kept. `--memory=1g` via
+  `PodmanArgs` is discarded on a Pi until the memory cgroup is enabled
+  (`cgroup_enable=memory cgroup_memory=1` in `/boot/firmware/cmdline.txt` + reboot).
+- **PUID/PGID** in `.env` must equal your real `id -u`/`id -g` — the pod's
+  `UserNS=keep-id` is what makes that mapping land correctly on the host.
 
 ---
 _⚠️ UNTESTED on this host — Quadlet translation of the tested Docker stack
-([docker repo](https://github.com/hshamsaldin/docker/tree/main/containers/qbittorrent)),
-where the leak check returned a Swiss ProtonVPN exit IP (no leak), Cloudflare DoT
-resolved trackers, and auto port-forwarding was verified end-to-end. The rootless
-Podman path (keep-id, netns sharing, PF up-command) needs host verification.
-Replace with `Tested on: <host>, <YYYY-MM-DD>` once Deploy + Verify have run._
+([docker repo](https://github.com/hshamsaldin/docker/tree/main/containers/qbittorrent)).
+An earlier non-pod design WAS tested live (leak check returned a Swiss
+ProtonVPN exit IP, Cloudflare DoT resolved trackers, auto port-forwarding
+verified end-to-end) but broke file permissions for this container — see
+Notes and [gluetun's README](../gluetun). The current pod-based structure
+needs fresh host verification. Replace with `Tested on: <host>, <YYYY-MM-DD>`
+once Deploy + Verify have run._

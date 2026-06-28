@@ -51,7 +51,8 @@ that is what this repo standardizes on.
 | [atvloadly](containers/atvloadly) | Apple TV IPA sideloading | `docker.io/bitxeno/atvloadly:latest` | 5533 | `%h/containers/atvloadly` (bind) |
 | [omada](containers/omada) | TP-Link Omada SDN controller ⚠️ UNTESTED | `docker.io/mbentley/omada-controller:latest` | 8043 | `omada-data` / `omada-logs` (volume) |
 | [jellyfin](containers/jellyfin) | Media server | `docker.io/jellyfin/jellyfin:latest` | 8096 | `./config`, `./cache` (bind) |
-| [qbittorrent](containers/qbittorrent) | Torrent client behind ProtonVPN | `lscr.io/linuxserver/qbittorrent:latest` + `docker.io/qmcgaw/gluetun:latest` | 8080 | `./config`, `./gluetun` (bind) |
+| [gluetun](containers/gluetun) | Shared ProtonVPN pod — other containers ride it | `docker.io/qmcgaw/gluetun:latest` | — (members publish theirs) | `./state` (bind) |
+| [qbittorrent](containers/qbittorrent) | Torrent client, rides the gluetun pod | `lscr.io/linuxserver/qbittorrent:latest` | 8080 | `./config` (bind) |
 
 > Keep this table updated whenever you add or remove a container.
 > Images are **fully qualified** (`docker.io/...`) — Podman has no implicit
@@ -90,8 +91,9 @@ and record any deliberate deviation from this standard under `## Notes`.
 ## 1. One container = one Quadlet unit = one systemd service
 
 - Every app is a `containers/<app>/<app>.container` file (plus a `.network` if it
-  needs its own bridge). Multi-container apps (e.g. qBittorrent + gluetun) get one
-  `.container` per service in the same folder.
+  needs its own bridge). An app that shares a netns with others (e.g. qBittorrent
+  riding [gluetun](containers/gluetun)) lives in its own folder and joins the
+  owner's `.pod` via `Pod=<name>.pod` instead of declaring its own network.
 - Folder name = app name = lowercase (`netbird`, `atvloadly`).
 - **No `podman run`** for anything permanent. If it should survive a reboot, it is
   a Quadlet unit — systemd owns its lifecycle.
@@ -145,8 +147,10 @@ Rules:
 - **Rootless caveat:** a bind-mount file owned by host UID 1000 is **not** UID 1000
   inside the container — rootless Podman shifts UIDs into your subuid range. Use
   `UserNS=keep-id` so your host UID maps 1:1 into the container (then `PUID/PGID`
-  or `User=` match your real `id -u`/`id -g`). This is why jellyfin/qbittorrent
-  pin `UserNS=keep-id`.
+  or `User=` match your real `id -u`/`id -g`). This is why jellyfin pins it
+  directly; qbittorrent gets it from the [gluetun](containers/gluetun) pod it
+  joins (per-container `UserNS=` conflicts with `Network=container:`/`Pod=`
+  membership in some combinations — verified live, see that container's Notes).
 - **Docker volumes do NOT carry over.** Podman has its own volume store; a
   container that used an external *Docker* volume (NetBird, Omada) needs its data
   migrated (see those READMEs) or a fresh setup. There is no shared volume namespace.
@@ -195,8 +199,17 @@ More rules:
 - Apps that must talk to a reverse proxy join a **shared** network — create one
   `proxy.network` unit and reference `Network=proxy.network` from each.
 - Only publish ports you actually need; everything internal stays on the bridge.
-- **Shared netns** (qBittorrent rides gluetun's tunnel): the second container uses
-  `Network=container:gluetun` and depends on the first via `Requires=`/`After=`.
+- **Shared netns for multiple containers — use a `.pod`, not `Network=container:`.**
+  Joining another container's netns directly (`Network=container:<other>`)
+  conflicts with `UserNS=keep-id` on the joining container — rootless Podman
+  rejects the combination (verified: `status=126`, container never created).
+  Instead, give the namespace its own `.pod` unit with `UserNS=keep-id` set
+  **once** there, and have every member container join via `Pod=<name>.pod`
+  (no `UserNS=`/`Network=`/`PublishPort=` of its own — the pod owns those).
+  This is also how you connect a *future* container to an existing shared pod
+  (e.g. routing more traffic through [gluetun](containers/gluetun)): add
+  `Pod=gluetun.pod` + `Requires=`/`After=gluetun.service` to the new unit, and
+  add its port to the pod's `PublishPort=` list.
 
 ## 6. Upgrades — `podman auto-update`
 
@@ -245,7 +258,8 @@ podman/
 │   ├── atvloadly/
 │   ├── omada/
 │   ├── jellyfin/
-│   └── qbittorrent/           # qBittorrent + gluetun (ProtonVPN) sidecar
+│   ├── gluetun/                # shared ProtonVPN pod — other containers ride it
+│   └── qbittorrent/             # joins gluetun.pod (Pod=gluetun.pod)
 └── scripts/
     ├── update-all.sh          # podman auto-update + prune
     └── measure-footprint.sh   # snapshot RAM/disk: Docker (before) vs Podman (after)
