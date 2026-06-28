@@ -182,8 +182,12 @@ sudo systemctl enable --now atvloadly-refresh.timer
   the timer and any in-app schedule use local wall-clock time, not UTC.
 
 ---
-_⚠️ UNTESTED on this host — Quadlet translation of the tested Docker stack
-([docker repo](https://github.com/hshamsaldin/docker/tree/main/containers/atvloadly)).
-The Docker deploy/backup/restore are verified from the working setup documented in
-[hshamsaldin/atvloadly](https://github.com/hshamsaldin/atvloadly); the rootless
-Podman path (esp. USB/dbus/avahi) needs host verification._
+_Tested on: `raspberrypi` (Pi 4B, Debian 13 Trixie, Podman 5.4.2), 2026-06-28 —
+migrated live from Docker with existing data in place (no re-pairing). Came up
+healthy, web server bound on `:80` internally, Avahi discovery started, and
+the WebUI confirmed the existing paired Apple TV/apps intact with no
+pairing/login prompt. Needed `UserNS=keep-id`+`User=1000:1000` (real UID match
+for the `700`-mode data dir), `AddCapability=NET_BIND_SERVICE` (port 80 bind
+inside the container), and a one-time `chown` of root-owned leftovers from
+Docker — see Notes. dbus/avahi sockets needed zero extra config, contrary to
+this stack's original "likely needs rootful" assumption._

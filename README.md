@@ -18,12 +18,15 @@ Docker kept as instant rollback.
 > Each container README ends with a **Tested on** line recording the host + date
 > its commands were last verified.
 >
-> ### ⚠️ Conversion status: UNTESTED on the host
-> The Docker stacks these come from are fully tested (see the docker repo). The
-> **Podman/Quadlet translations here have not yet been run on the Pi.** Every
-> Deploy/Upgrade section is therefore marked `⚠️ UNTESTED` until verified. Treat
-> this repo as "convert + verify," not "copy + trust." Replace each UNTESTED mark
-> with a real `Tested on:` line only after the command has actually run here.
+> ### Conversion status: 4/5 verified live on the host
+> jellyfin, gluetun+qbittorrent, netbird, and atvloadly are migrated and
+> verified on `raspberrypi` (real `Tested on:` lines in each README) — every
+> one of them needed at least one real fix the Docker stack never surfaced
+> (capabilities, UID mapping, firewall interactions); see each README's Notes
+> and [docs/migration.md](docs/migration.md) for what was actually wrong and
+> how it was found. **omada is still `⚠️ UNTESTED`** — treat its
+> Deploy/Upgrade as "convert + verify," not "copy + trust," same as the rest
+> were until proven.
 
 ## Why Quadlet (and not `podman compose`)
 
@@ -48,7 +51,7 @@ that is what this repo standardizes on.
 | Container | Purpose | Image | Port | Storage |
 |-----------|---------|-------|------|---------|
 | [netbird](containers/netbird) | WireGuard mesh VPN client | `docker.io/netbirdio/netbird:latest` | — | `netbird-client` (volume) |
-| [atvloadly](containers/atvloadly) | Apple TV IPA sideloading | `docker.io/bitxeno/atvloadly:latest` | 5533 | `%h/containers/atvloadly` (bind) |
+| [atvloadly](containers/atvloadly) | Apple TV IPA sideloading | `docker.io/bitxeno/atvloadly:latest` | 5533 | `/etc/atvloadly` (bind) |
 | [omada](containers/omada) | TP-Link Omada SDN controller ⚠️ UNTESTED | `docker.io/mbentley/omada-controller:latest` | 8043 | `omada-data` / `omada-logs` (volume) |
 | [jellyfin](containers/jellyfin) | Media server | `docker.io/jellyfin/jellyfin:latest` | 8096 | `./config`, `./cache` (bind) |
 | [gluetun](containers/gluetun) | Shared ProtonVPN pod — other containers ride it | `docker.io/qmcgaw/gluetun:latest` | — (members publish theirs) | `./state` (bind) |

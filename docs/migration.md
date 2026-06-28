@@ -257,13 +257,13 @@ Then fix the unit and retry. Nothing was lost — the data wasn't touched.
 
 ## Recommended order (easiest → riskiest)
 
-| # | Container | Why this slot | Watch out for |
-|---|-----------|---------------|---------------|
-| 1 | **jellyfin** | simplest rootless validation (bind mounts + one port) | `UserNS=keep-id` + `User=` must equal your `id -u`:`id -g`; media `/data` path |
-| 2 | **gluetun**, then **qbittorrent** | proves the shared-pod pattern + the VPN kill switch | deploy gluetun first, confirm the tunnel/exit-IP *before* starting qBittorrent; needs `/dev/net/tun`; `UserNS=keep-id` lives on `gluetun.pod`, not either container |
-| 3 | **netbird** | needs `NET_ADMIN`/`tun`; volume data | likely easiest to **re-register** with a fresh setup key |
-| 4 | **omada** | external-volume migration + 5.x→6.x DB jump | migrate via in-app `.cfg`; don't leap major versions in one pull |
-| 5 | **atvloadly** | **last** — most likely to need rootful | USB pairing + host dbus/avahi can be awkward rootless; may run `sudo` (system Quadlet) |
+| # | Container | Why this slot | What it actually needed (verified live) |
+|---|-----------|---------------|------------------------------------------|
+| 1 | ✅ **jellyfin** | simplest rootless validation (bind mounts + one port) | `UserNS=keep-id` + `User=` matching real `id -u`:`id -g`; `ufw allow` (Docker had silently bypassed it) |
+| 2 | ✅ **gluetun**, then **qbittorrent** | proves the shared-pod pattern + the VPN kill switch | `gluetun.pod` with **no** `UserNS=` anywhere (gluetun's nftables kill-switch hard-fails under `keep-id`, three designs tried — see that container's Notes); qBittorrent's resulting UID mismatch fixed via the **derived**-UID procedure (`docs/host-setup.md`), not a hardcoded number |
+| 3 | ✅ **netbird** | needs `NET_ADMIN`/`tun`; volume data | also needed `NET_RAW` (ICMP-based connectivity checks) — `NET_ADMIN` alone wasn't enough; re-registered as a fresh peer (Docker's volume doesn't carry over) |
+| 4 | **omada** | external-volume migration + 5.x→6.x DB jump | not yet attempted — migrate via in-app `.cfg`; don't leap major versions in one pull |
+| 5 | ✅ **atvloadly** | expected to need rootful — **didn't** | host dbus/avahi sockets turned out to be mode `666` (world read-write), zero extra config needed. Real fixes: `UserNS=keep-id`+`User=` (data dir is `700`, owner-only), `AddCapability=NET_BIND_SERVICE` (binds port 80 *inside* the container — invisible under Docker's real root, fatal otherwise), and a one-time `chown` of root-owned leftovers Docker had written. Stayed fully rootless. |
 
 Each container's full per-step detail (env keys, `User=`, gotchas, verify command)
 is in its own `containers/<app>/README.md`.
