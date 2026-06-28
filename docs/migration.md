@@ -106,6 +106,14 @@ sudo ufw allow <port>/tcp
 | omada | `8088,8043,8843/tcp` + `19810,27001,29810/udp` + `29811:29817/tcp` |
 | netbird | none (no published ports) |
 
+**`Environment=` with an unquoted space silently drops everything after it
+(verified, caused a real outage).** systemd parses `Environment=VAR=val with
+spaces` as *multiple* space-separated `VAR=value` assignments on one line, not
+a single value — so e.g. `Environment=CMD=/bin/sh /script.sh {{ARG}}` becomes
+just `CMD=/bin/sh` inside the container; the rest is silently swallowed (only
+shows up via `podman exec <ctr> env`, no error anywhere). Quote the *entire*
+assignment when the value has a space: `Environment="CMD=/bin/sh /script.sh {{ARG}}"`.
+
 **`UserNS=keep-id` + `Network=container:<other>` don't mix (verified).** A
 container that joins another container's netns cannot also set up its own user
 namespace — rootless Podman fails the start with `status=126` and never creates

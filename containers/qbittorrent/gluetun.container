@@ -36,7 +36,7 @@ Environment=VPN_SERVICE_PROVIDER=protonvpn
 Environment=VPN_TYPE=wireguard
 # On each port assign/renew, gluetun runs qbt-port.sh (in this netns, so
 # qBittorrent is on localhost:8080) to set qBittorrent's listening port.
-Environment=VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh /scripts/qbt-port.sh {{PORT}}
+Environment="VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh /scripts/qbt-port.sh {{PORT}}"
 # Encrypted DNS over TLS via Cloudflare (Quad9 DoT was reset on this route).
 Environment=DOT=on
 Environment=DOT_PROVIDERS=cloudflare

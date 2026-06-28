@@ -118,6 +118,17 @@ tar czf qbittorrent-$(date +%F).tar.gz -C ~/containers/qbittorrent/config .
 - **WebUI is published on gluetun.** Reaching it from the LAN also needs
   `FIREWALL_OUTBOUND_SUBNETS` (in `.env`) so gluetun doesn't drop the return
   packets. If the WebUI is unreachable from other machines, check that subnet first.
+- **`Environment=` splits on whitespace (verified, caused a real outage).**
+  `Environment=VAR=val with spaces` is parsed by systemd as *multiple*
+  space-separated assignments, not one — so the unquoted
+  `VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh /scripts/qbt-port.sh {{PORT}}` line
+  silently became just `VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh` inside the
+  container (confirmed via `podman exec gluetun env`), so gluetun's up-command
+  ran a no-op shell and `qbt-port.sh` never fired — port-forwarding worked, but
+  qBittorrent's listening port silently went stale every time the forwarded port
+  changed. **Fixed** by quoting the whole assignment:
+  `Environment="VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh /scripts/qbt-port.sh {{PORT}}"`.
+  Any `Environment=` value with a space needs this.
 - **Port forwarding is auto-wired.** On each port assign/renew gluetun runs
   `scripts/qbt-port.sh` (mounted at `/scripts`, via `VPN_PORT_FORWARDING_UP_COMMAND`),
   which POSTs the new port to qBittorrent's WebUI API on `127.0.0.1:8080` (same
