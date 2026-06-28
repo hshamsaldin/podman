@@ -23,8 +23,8 @@ EnvironmentFile=%h/containers/jellyfin/.env       # provides TZ (+ optional scri
 # --- security baseline ---
 NoNewPrivileges=true
 DropCapability=ALL
-Memory=2g                                         # Pi 4B has 3.7Gi; 2g leaves OS headroom
-PidsLimit=400
+PodmanArgs=--memory=2g --pids-limit=400           # Pi 4B has 3.7Gi; 2g leaves OS headroom
+# (Memory=/PidsLimit= keys need newer Quadlet than Podman 5.4.2 — use PodmanArgs)
 
 # --- storage: app data next to the unit's data dir; media disk read-only ---
 Volume=%h/containers/jellyfin/config:/config

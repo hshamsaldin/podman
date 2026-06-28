@@ -172,7 +172,7 @@ seasons present in the subtitle source are touched. Put `JELLYFIN_API_KEY` in yo
   must equal your real `id -u`:`id -g`** — Quadlet can't read it from `.env`, so
   set it literally. If Jellyfin crash-loops on `Access to the path '/config/log'
   is denied`, the UID mapping (or `config` ownership) is the cause.
-- **Deviation — `Memory=2g`** (above the 512m baseline). Pi 4B
+- **Deviation — `--memory=2g`** (above the 512m baseline), via `PodmanArgs`. Pi 4B
   with 3.7 GiB RAM. **Caveat:** Raspberry Pi OS ships with the memory cgroup
   disabled, so the limit is silently discarded until you append
   `cgroup_enable=memory cgroup_memory=1` to `/boot/firmware/cmdline.txt` and reboot.

@@ -166,11 +166,11 @@ AddCapability=NET_ADMIN       # …then add back ONLY what's needed
 Restart=always                # systemd is the supervisor (≈ unless-stopped)
 ```
 
-Resource caps use Quadlet's dedicated keys (≈ Compose `mem_limit` / `pids_limit`):
+Resource caps go through `PodmanArgs=` (the dedicated `Memory=` / `PidsLimit=`
+keys need a newer Quadlet than Podman 5.4.2 ships — verified unsupported on the host):
 ```ini
 [Container]
-Memory=512m
-PidsLimit=200
+PodmanArgs=--memory=512m --pids-limit=200
 ```
 
 More rules:

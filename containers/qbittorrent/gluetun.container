@@ -22,8 +22,7 @@ AddCapability=NET_ADMIN
 AddCapability=DAC_OVERRIDE
 AddCapability=CHOWN
 AddDevice=/dev/net/tun
-Memory=256m
-PidsLimit=200
+PodmanArgs=--memory=256m --pids-limit=200
 
 # --- VPN config: secrets/values come from .env (gitignored). The .env keys use
 #     gluetun's own names, so they pass straight through via EnvironmentFile. ---

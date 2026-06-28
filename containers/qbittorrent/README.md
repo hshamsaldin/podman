@@ -115,7 +115,7 @@ tar czf qbittorrent-$(date +%F).tar.gz -C ~/containers/qbittorrent/config .
   - qBittorrent is a linuxserver/s6 image; `DropCapability=ALL`/`ReadOnly` are **not**
     applied (unverified against its init, would risk a crash-loop). `NoNewPrivileges`
     kept on both.
-  - Memory caps (`Memory=256m` gluetun / `1g` qBittorrent). On a
+  - Memory caps (`--memory=256m` gluetun / `1g` qBittorrent) via `PodmanArgs`. On a
     Pi they're discarded until the memory cgroup is enabled (`cgroup_enable=memory
     cgroup_memory=1` in `/boot/firmware/cmdline.txt` + reboot).
 - **Rootless caveats (Podman-specific).** `UserNS=keep-id` maps your host UID 1:1

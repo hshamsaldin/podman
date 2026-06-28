@@ -19,8 +19,7 @@ Network=container:gluetun
 # --- security: linuxserver/s6 image; caps intentionally NOT dropped (unverified
 #     against this image's init, like the Docker stack). NoNewPrivileges kept. ---
 NoNewPrivileges=true
-Memory=1g
-PidsLimit=400
+PodmanArgs=--memory=1g --pids-limit=400
 
 # --- rootless UID mapping so downloaded files stay owned by your host user ---
 # PUID/PGID come from .env; keep-id maps your host UID 1:1 into the container.

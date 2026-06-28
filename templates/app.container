@@ -16,8 +16,7 @@ AutoUpdate=registry                     # `podman auto-update` upgrades it
 NoNewPrivileges=true
 DropCapability=ALL
 # AddCapability=NET_ADMIN               # uncomment only the caps you truly need
-Memory=512m
-PidsLimit=200
+PodmanArgs=--memory=512m --pids-limit=200
 
 # --- config / secrets (values come from .env, which is gitignored) ---
 EnvironmentFile=%h/containers/app/.env
