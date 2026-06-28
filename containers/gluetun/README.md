@@ -61,6 +61,20 @@ tar czf gluetun-$(date +%F).tar.gz -C ~/containers/gluetun/state .
 
 ## Notes
 
+- **`FIREWALL=off` is required under `UserNS=keep-id` (verified, gluetun
+  refuses to start without it).** gluetun normally manages its own internal
+  nftables/iptables kill-switch as defense-in-depth. Under `keep-id`, the
+  kernel's nft "rule set generation id" check needs genuine
+  UID-0-owns-the-netns semantics that `keep-id`'s UID remapping doesn't
+  satisfy — confirmed live, all three iptables backends (legacy/nft/nft)
+  rejected with `Permission denied (you must be root)`, and the container
+  exited immediately. This does **not** remove the kill switch: it's enforced
+  structurally instead — when this container goes, the shared netns vanishes,
+  and Podman tears down every other container riding this pod along with it
+  (already verified: stopping gluetun removed qBittorrent's `--rm` container
+  too, not just its network). `FIREWALL_OUTBOUND_SUBNETS` becomes a no-op with
+  the firewall off; left documented in `.env.example` in case a future
+  Podman/kernel combination resolves the keep-id + nftables interaction.
 - **Connecting a future container to this VPN.** In its `<app>.container`:
   1. Add `Pod=gluetun.pod` — do **not** add your own `UserNS=` (inherited from
      the pod) or `Network=`/`PublishPort=` (the pod owns those).

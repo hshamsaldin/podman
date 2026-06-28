@@ -132,6 +132,17 @@ host UID again for every container in the pod. See
 [gluetun's README](../containers/gluetun) for the worked example, including
 how to connect a *future* container to the same shared pod.
 
+**A container that manages its own iptables/nftables (a VPN client, a
+firewall) may refuse to start under `UserNS=keep-id` (verified).** The
+kernel's nft "rule set generation id" check needs genuine
+UID-0-owns-the-netns semantics that `keep-id`'s UID remapping doesn't satisfy.
+Symptom: the app's own log shows something like `Permission denied (you must
+be root)` from iptables/nftables, and the container exits immediately — this
+is the app failing, not Podman/Quadlet. If the app has a documented way to
+disable its *own* internal firewall management (gluetun: `FIREWALL=off`), use
+it — the kill switch / isolation is still enforced structurally by the pod's
+shared netns and container lifecycle, not by the app's internal rules.
+
 ### 6. Verify (the gate — don't proceed until this is green)
 
 ```bash
