@@ -8,7 +8,9 @@ This is the Podman port of my [docker](https://github.com/hshamsaldin/docker)
 repo: same containers, same rules, re-expressed as native Podman.
 
 New host? Start with [docs/host-setup.md](docs/host-setup.md), then deploy any
-container below.
+container below. Coming **from Docker**? Follow
+[docs/migration.md](docs/migration.md) — a one-container-at-a-time cutover with
+Docker kept as instant rollback.
 
 > ## ⚠️ Only tested commands
 > Nothing goes into this repo until it has been **run on the real host and worked**.
@@ -231,7 +233,8 @@ podman/
 ├── README.md                  # this file — the standard + container index
 ├── .gitignore                 # never commit secrets/data
 ├── docs/
-│   └── host-setup.md          # one-time host prep (Podman, rootless, linger)
+│   ├── host-setup.md          # one-time host prep (Podman, rootless, linger)
+│   └── migration.md           # Docker -> Podman, one container at a time
 ├── templates/                 # copy these to start a new container
 │   ├── app.container
 │   ├── app.network
