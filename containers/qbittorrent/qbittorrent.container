@@ -25,7 +25,7 @@ PodmanArgs=--memory=1g --pids-limit=400
 # PUID/PGID come from .env; keep-id maps your host UID 1:1 into the container.
 UserNS=keep-id
 EnvironmentFile=%h/containers/qbittorrent/.env
-Environment=WEBUI_PORT=8080                  # must match the port published on gluetun
+Environment=WEBUI_PORT=8080
 
 # --- storage: app config + your downloads disk (DOWNLOADS_PATH from .env — set
 #     it literally here too; Quadlet does not interpolate .env into Volume=). ---

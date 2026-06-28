@@ -15,8 +15,8 @@ AutoUpdate=registry
 # --- security baseline ---
 NoNewPrivileges=true
 DropCapability=ALL
-AddCapability=NET_ADMIN                  # required for the WireGuard tunnel
-AddDevice=/dev/net/tun                   # WireGuard interface device
+AddCapability=NET_ADMIN
+AddDevice=/dev/net/tun
 
 # --- first registration only: uncomment, set the key, start once, then remove ---
 # Environment=NB_SETUP_KEY=<your-setup-key>

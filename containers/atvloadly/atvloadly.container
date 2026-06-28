@@ -26,11 +26,11 @@ SeccompProfile=unconfined
 PublishPort=5533:80
 
 # --- storage ---
-Volume=/etc/atvloadly:/data                       # ALL persistent state (pairing,
-                                                  # Apple ID session, app.db, settings)
-Volume=/var/run/dbus:/var/run/dbus                # host dbus — device discovery
-Volume=/var/run/avahi-daemon:/var/run/avahi-daemon # host avahi — Bonjour/mDNS discovery
-Volume=/etc/localtime:/etc/localtime:ro           # match host local time
+# /data = ALL persistent state: pairing, Apple ID session, app.db, settings (backup target)
+Volume=/etc/atvloadly:/data
+Volume=/var/run/dbus:/var/run/dbus
+Volume=/var/run/avahi-daemon:/var/run/avahi-daemon
+Volume=/etc/localtime:/etc/localtime:ro
 
 [Service]
 Restart=always

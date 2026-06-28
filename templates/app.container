@@ -7,10 +7,10 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=docker.io/vendor/image:latest    # fully qualified + :latest (needed for AutoUpdate)
-ContainerName=app                       # = folder/app name
+Image=docker.io/vendor/image:latest
+ContainerName=app
 HostName=app
-AutoUpdate=registry                     # `podman auto-update` upgrades it
+AutoUpdate=registry
 
 # --- security baseline ---
 NoNewPrivileges=true
@@ -42,4 +42,4 @@ HealthRetries=3
 Restart=always
 
 [Install]
-WantedBy=default.target                 # start on boot (with linger enabled)
+WantedBy=default.target

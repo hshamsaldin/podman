@@ -16,13 +16,13 @@ Ulimit=nofile=4096:8192
 PodmanArgs=--stop-timeout=60
 
 # --- ports (LAN-wide, not localhost-bound — devices must reach them) ---
-PublishPort=8088:8088                # management HTTP (redirects to HTTPS)
-PublishPort=8043:8043                # management HTTPS — the login UI
-PublishPort=8843:8843                # guest captive portal HTTPS
-PublishPort=19810:19810/udp          # device discovery (v6+)
-PublishPort=27001:27001/udp          # app discovery
-PublishPort=29810:29810/udp          # device discovery
-PublishPort=29811-29817:29811-29817  # manager / adopt / upgrade / transfer / rtty / monitor
+PublishPort=8088:8088
+PublishPort=8043:8043
+PublishPort=8843:8843
+PublishPort=19810:19810/udp
+PublishPort=27001:27001/udp
+PublishPort=29810:29810/udp
+PublishPort=29811-29817:29811-29817
 
 # --- config (no secrets; PUID/PGID are host-specific — adjust to your omada user) ---
 Environment=PUID=508

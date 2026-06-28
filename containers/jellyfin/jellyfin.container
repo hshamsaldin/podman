@@ -18,12 +18,12 @@ UserNS=keep-id
 User=1000:1000
 
 # --- config / secrets ---
-EnvironmentFile=%h/containers/jellyfin/.env       # provides TZ (+ optional script vars)
+EnvironmentFile=%h/containers/jellyfin/.env
 
 # --- security baseline ---
 NoNewPrivileges=true
 DropCapability=ALL
-PodmanArgs=--memory=2g --pids-limit=400           # Pi 4B has 3.7Gi; 2g leaves OS headroom
+PodmanArgs=--memory=2g --pids-limit=400
 # (Memory=/PidsLimit= keys need newer Quadlet than Podman 5.4.2 — use PodmanArgs)
 
 # --- storage: app data next to the unit's data dir; media disk read-only ---
@@ -34,7 +34,7 @@ Volume=%h/containers/jellyfin/cache:/cache
 Volume=/data:/data:ro
 
 # --- networking ---
-PublishPort=8096:8096                             # bind 127.0.0.1:8096 if behind a proxy
+PublishPort=8096:8096
 Network=jellyfin.network
 
 [Service]
