@@ -7,6 +7,11 @@
 Description=gluetun — ProtonVPN WireGuard tunnel (qBittorrent's netns)
 Wants=network-online.target
 After=network-online.target
+# Wider restart budget — qBittorrent's container also depends on this one
+# existing (shared netns); give VPN reconnects/upgrades room to retry instead
+# of exhausting systemd's default 5-restarts/10s and going quiet.
+StartLimitIntervalSec=120
+StartLimitBurst=10
 
 [Container]
 Image=docker.io/qmcgaw/gluetun:latest
@@ -52,6 +57,7 @@ HealthRetries=5
 
 [Service]
 Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=default.target

@@ -90,6 +90,17 @@ tar czf qbittorrent-$(date +%F).tar.gz -C ~/containers/qbittorrent/config .
   own — no `PublishPort`/`Network` bridge; those live on gluetun. Always run the
   **Verify** IP check after any change; a slip that detaches qBittorrent from
   gluetun's netns would leak your real IP.
+- **Kill-switch teardown is total, not just network loss (verified, stricter than
+  Docker).** When gluetun's container is removed (manual stop, restart, image
+  update), Podman removes qBittorrent's `--rm` container right along with it —
+  its netns just vanished — not merely cuts its network like Docker's version
+  did. `Restart=always` + `Requires=`/`After=` bring it back once gluetun is up
+  again; `StartLimitIntervalSec=120`/`StartLimitBurst=10` on both units gives
+  that recovery enough budget to survive a couple of quick back-to-back gluetun
+  restarts (systemd's default 5-restarts/10s was exhausted testing this and left
+  qBittorrent `inactive (dead)` until a manual `systemctl --user start
+  qbittorrent`). If it's ever sitting inactive after a real gluetun blip:
+  `systemctl --user reset-failed qbittorrent; systemctl --user start qbittorrent`.
 - **No `UserNS=keep-id` on qBittorrent (verified, Podman-specific).** Rootless
   Podman rejects `UserNS=keep-id` combined with `Network=container:gluetun` —
   joining another container's netns can't also set up a separate user namespace
