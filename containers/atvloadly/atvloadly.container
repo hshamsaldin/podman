@@ -41,8 +41,18 @@ User=1000:1000
 # immediate crash loop, regardless of which HOST port is published.
 AddCapability=NET_BIND_SERVICE
 
-# --- web UI — LAN-wide (needed from other devices) ---
-PublishPort=5533:80
+# --- networking: host, not bridge (verified — the ORIGINAL Docker stack used
+#     network_mode: host, which our first conversion missed; it defaulted to
+#     Podman's isolated bridge network instead). This matters for more than
+#     the web UI: Apple's device-pairing protocol needs broad LAN reachability
+#     that a NAT'd bridge blocks — avahi discovery still worked (it queries
+#     the host's avahi socket directly), but the app showed an empty device
+#     list and no live connection until switched to host networking.
+#     PublishPort= is meaningless under Network=host (no port mapping occurs;
+#     the app binds directly to the HOST's port 80 — the web UI moves from
+#     :5533 to :80 as a result). Rootless Podman supports host networking
+#     fine — it reuses the host's existing netns, no extra privilege needed.
+Network=host
 
 # --- storage ---
 # /data = ALL persistent state: pairing, Apple ID session, app.db, settings (backup target)
