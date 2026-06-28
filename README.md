@@ -149,13 +149,19 @@ Rules:
   `UserNS=keep-id` so your host UID maps 1:1 into the container (then `PUID/PGID`
   or `User=` match your real `id -u`/`id -g`). Jellyfin pins it directly. **Not
   every container can**, though: [gluetun](containers/gluetun)'s pod runs with
-  **no** `UserNS=` at all — its VPN kill-switch (nftables) hard-fails under
-  `keep-id`'s fragmented UID mapping, with no documented way to disable it
-  (verified live, see that container's Notes). When a container's own
-  requirement conflicts with `keep-id`, that container loses the 1:1 mapping;
-  fix pre-existing bind-mounted files with `podman unshare chown -R <uid>:<gid>
-  <path>` instead (see [qbittorrent](containers/qbittorrent)'s Notes for the
-  worked example).
+  **no** `UserNS=` at all, on any member — its VPN kill-switch (nftables)
+  hard-fails under `keep-id`'s fragmented UID mapping, with no documented way
+  to disable it, and per-container `keep-id` on a single pod member fails the
+  same way (verified live both ways, see that container's Notes). When a
+  container's own requirement conflicts with `keep-id`, it loses the 1:1
+  mapping — **derive** its real host UID (`docs/host-setup.md` → "Finding a
+  container's REAL host UID", a formula + script, never a hardcoded number)
+  and fix pre-existing bind-mounted files with `sudo chown -R <derived>:<derived>
+  <path>` (native filesystem) or the mount's `uid=`/`gid=` option (NTFS/exFAT —
+  `chown` is a no-op there; see [qbittorrent](containers/qbittorrent)'s Notes
+  for the worked example). Don't use `podman unshare chown` for this — its
+  translation can mismatch a specific pod member's actual resolved UID
+  (confirmed live).
 - **Docker volumes do NOT carry over.** Podman has its own volume store; a
   container that used an external *Docker* volume (NetBird, Omada) needs its data
   migrated (see those READMEs) or a fresh setup. There is no shared volume namespace.
@@ -210,17 +216,24 @@ More rules:
   rejects the combination (verified: `status=126`, container never created).
   Give the namespace its own `.pod` unit instead, with every member container
   joining via `Pod=<name>.pod` (no `Network=`/`PublishPort=` of its own — the
-  pod owns those). **`UserNS=keep-id` on that pod is not automatically safe**
-  — it's shared by every member, so if any one of them manages its own
-  iptables/nftables (a VPN client, a firewall), `keep-id` can make *that*
-  container refuse to start instead (verified live with
-  [gluetun](containers/gluetun) — no documented way to disable its firewall,
-  so the pod runs with no `UserNS=` at all, and members needing 1:1 file
-  ownership use `podman unshare chown` on pre-existing files instead). Decide
-  per pod, by checking whether any member fights `keep-id`, before adding it.
-  Connecting a *future* container to an existing shared pod is the same either
-  way: add `Pod=<name>.pod` + `Requires=`/`After=<owner>.service` to the new
-  unit, and add its port to the pod's `PublishPort=` list.
+  pod owns those). **`UserNS=keep-id` is not automatically safe, at any
+  level.** Tried three ways with [gluetun](containers/gluetun) before giving
+  up on it entirely: pod-level `keep-id` broke gluetun's own nftables
+  kill-switch (no documented way to disable it); per-container `keep-id` on
+  just the riding container, still joined via `Pod=`, was rejected identically
+  to the direct-join case (`status=126` — matches open upstream bugs
+  [containers/podman#26889](https://github.com/containers/podman/issues/26889),
+  [#22931](https://github.com/containers/podman/issues/22931)). If any pod
+  member manages its own iptables/nftables, assume `keep-id` is off the table
+  for the **whole pod**, no exceptions, until those bugs are fixed upstream.
+  Members that lose their 1:1 UID mapping as a result: **derive** the real
+  host UID (`docs/host-setup.md`'s formula/script — never hardcode it) and
+  apply it directly to pre-existing bind-mounted paths (`chown` on a native
+  filesystem; the mount's `uid=`/`gid=` option for NTFS/exFAT — see
+  [qbittorrent](containers/qbittorrent)'s Notes for the worked example).
+  Connecting a *future* container to an existing shared pod: add
+  `Pod=<name>.pod` + `Requires=`/`After=<owner>.service` to the new unit, and
+  add its port to the pod's `PublishPort=` list.
 
 ## 6. Upgrades — `podman auto-update`
 
@@ -272,8 +285,9 @@ podman/
 │   ├── gluetun/                # shared ProtonVPN pod — other containers ride it
 │   └── qbittorrent/             # joins gluetun.pod (Pod=gluetun.pod)
 └── scripts/
-    ├── update-all.sh          # podman auto-update + prune
-    └── measure-footprint.sh   # snapshot RAM/disk: Docker (before) vs Podman (after)
+    ├── update-all.sh            # podman auto-update + prune
+    ├── measure-footprint.sh     # snapshot RAM/disk: Docker (before) vs Podman (after)
+    └── derive-rootless-uid.sh   # compute a container's real host UID (no UserNS= set)
 ```
 
 ## Measuring the switch (Docker → Podman footprint)

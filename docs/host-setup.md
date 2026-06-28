@@ -53,6 +53,39 @@ sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$USER"
 podman system migrate                        # apply the new mapping
 ```
 
+### Finding a container's REAL host UID (no `UserNS=` set)
+
+A container with no `UserNS=` line uses Podman's default rootless mapping:
+container UID `0` → your real UID; container UID `1..65535` → your `/etc/subuid`
+range, contiguous from its start. So container UID `N` (`N ≥ 1`) is always:
+
+```
+host_uid = subuid_start + (N - 1)
+```
+
+You need this whenever a container with no `UserNS=` (e.g. one riding a pod
+that can't use `keep-id` — see [gluetun](../containers/gluetun)) must read/write
+a bind-mounted path that already has real files on it. Don't hardcode the
+result anywhere — it's host-specific (depends on your `/etc/subuid` range).
+Compute it on whichever host you're deploying to:
+
+```bash
+./scripts/derive-rootless-uid.sh <container-uid>     # e.g. 1000 for PUID=1000
+```
+
+Then apply it to the path that needs it:
+- **Native filesystem** (ext4/xfs/btrfs): `sudo chown -R <result>:<result> <path>`.
+- **Foreign filesystem** (NTFS/exFAT via `ntfs-3g`/`exfat`): these fake Unix
+  ownership entirely from the mount's `uid=`/`gid=` option in `/etc/fstab` —
+  `chown` is a silent no-op on them, real per-file ownership doesn't exist.
+  Set that mount option to `<result>` instead (see
+  [jellyfin's fstab steps](../containers/jellyfin) for the mount itself; if
+  another container on the *same* disk needs your real UID instead — e.g.
+  Jellyfin reading the same media read-only via `keep-id` — the mount can only
+  satisfy one fixed owner, so give the **writer** the owner slot and rely on
+  the mount's `umask` granting the **reader** "other" read access instead of
+  loosening anything further).
+
 ## 3. Start user services at boot — enable linger (CRITICAL)
 
 Rootless containers run as **user** systemd services. Without "linger" they only

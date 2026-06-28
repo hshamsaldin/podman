@@ -60,14 +60,13 @@ tar czf gluetun-$(date +%F).tar.gz -C ~/containers/gluetun/state .
 
 ## Notes
 
-- **No `UserNS=keep-id` on this pod — deliberate, verified, no workaround
-  exists.** This pod went through two failed designs before landing here:
+- **No `UserNS=` on this pod, and none on any member either — deliberate,
+  verified, no workaround exists.** Three designs tried before landing here:
   1. *Direct join* (`Network=container:gluetun` on the riding container, no
-     pod): rootless Podman rejects `UserNS=keep-id` combined with
-     `Network=container:<other>` outright (`status=126`, container never
-     created).
-  2. *Pod with `UserNS=keep-id`*: avoided that conflict, but gluetun's
-     internal nftables kill-switch then refused to start —
+     pod) + `UserNS=keep-id` on that container: rootless Podman rejects the
+     combination outright (`status=126`, container never created).
+  2. *Pod with `UserNS=keep-id`* (on the pod itself): avoided conflict #1,
+     but gluetun's internal nftables kill-switch then refused to start —
      `ERROR creating iptables firewall: ... Permission denied (you must be
      root)` on **all three** iptables backends, container exits immediately.
      Checked gluetun's source and wiki directly: there is **no** documented
@@ -76,23 +75,30 @@ tar czf gluetun-$(date +%F).tar.gz -C ~/containers/gluetun/state .
      a single contiguous UID mapping starting at 0 (what plain default
      rootless mapping gives you); `keep-id` has to splice your real UID into
      the middle of that range, producing a fragmented mapping nft rejects.
-  This pod therefore runs with **no `UserNS=` line at all** (Podman's default
-  rootless mapping) — gluetun's firewall works, but it costs every member
-  container its 1:1 host-UID mapping. See
-  [qBittorrent's container file](../qbittorrent/qbittorrent.container) for
-  the resulting trade-off and the `podman unshare chown` fix it requires for
-  pre-existing bind-mounted files.
+  3. `UserNS=keep-id` on **just** the riding container (still joined via
+     `Pod=`, not a direct netns join — testing whether pod membership avoids
+     conflict #1 since pods don't necessarily share userns): rejected
+     identically to #1 (`status=126`). Matches open upstream bugs
+     [containers/podman#26889](https://github.com/containers/podman/issues/26889),
+     [#22931](https://github.com/containers/podman/issues/22931).
+  So: no `UserNS=` anywhere, full stop. gluetun's firewall works, but every
+  member container loses its 1:1 host-UID mapping. See
+  [qBittorrent's README](../qbittorrent) for the resulting trade-off — a
+  one-time, *derived* (never hardcoded) UID fix applied directly to whatever
+  bind-mounted paths already have real files on them, via
+  [docs/host-setup.md](../../docs/host-setup.md).
 - **Connecting a future container to this VPN.** In its `<app>.container`:
   1. Add `Pod=gluetun.pod` — do **not** add your own `UserNS=` (this pod has
-     none — adding `keep-id` to fix *your* container's file ownership will
-     break gluetun's firewall for the *whole* pod) or `Network=`/`PublishPort=`
-     (the pod owns those).
+     none — adding `keep-id`, even just to your one container, breaks either
+     the whole pod's firewall or fails outright; see above) or
+     `Network=`/`PublishPort=` (the pod owns those).
   2. Add `Requires=gluetun.service` / `After=gluetun.service` to `[Unit]`.
   3. Add the app's port to `gluetun.pod`'s `PublishPort=` list, then
      `systemctl --user daemon-reload` and restart the pod's containers.
-  4. If that container bind-mounts pre-existing host files, fix their
-     ownership once with `podman unshare chown -R <uid>:<gid> <path>` (see
-     qBittorrent's container file for the full explanation).
+  4. If that container bind-mounts pre-existing host files, derive its real
+     UID (`docs/host-setup.md`'s script) and apply it directly — `chown` for
+     a native filesystem, the mount's `uid=`/`gid=` option for NTFS/exFAT
+     (see [qBittorrent's README](../qbittorrent) for the worked example).
   All traffic from that container now exits through this tunnel — verify with
   the same `wget -qO- https://ipinfo.io/ip` check, run from inside *that*
   container, before trusting it.
@@ -122,14 +128,13 @@ tar czf gluetun-$(date +%F).tar.gz -C ~/containers/gluetun/state .
   `127.0.0.1:<port>:<port>` and front it with your proxy.
 
 ---
-_⚠️ UNTESTED on this host in its current (pod, no keep-id) form. Two earlier
-designs were tried and rejected live on `raspberrypi` (Pi 4B, Debian 13
-Trixie, Podman 5.4.2) on 2026-06-28 — see Notes for both failures
-(`status=126` direct-join, then gluetun's iptables hard-failing under
-pod-level `keep-id`). The underlying tunnel mechanics (WireGuard, exit IP,
-port forwarding, `qbt-port.sh` auto-sync after the `Environment=` quoting
-fix, kill-switch teardown) were all confirmed working under the first
-(non-pod) design before the restructure. This current no-keep-id pod design
-has not yet been run end-to-end. Replace with `Tested on: <host>,
-<YYYY-MM-DD>` once Deploy + Verify (including the `podman unshare chown` fix
-and a working qBittorrent write test) have actually run._
+_Tested on: `raspberrypi` (Pi 4B, Debian 13 Trixie, Podman 5.4.2), 2026-06-28 —
+full stack migrated live from Docker. Tunnel up, WireGuard connected,
+ProtonVPN exit IP confirmed (no leak), port forwarding + `qbt-port.sh`
+auto-sync verified end-to-end after the `Environment=` quoting fix.
+Kill-switch teardown confirmed (stopping this container removes every other
+pod member's `--rm` container too; both self-recover via `Restart=always`).
+Three `UserNS=` designs tried and rejected (see Notes) before landing on
+"none anywhere in this pod" — qBittorrent's resulting UID-mapping trade-off
+verified working via its own README's derived-UID fix, confirmed with the
+real daemon UID (not exec's default root, which would have falsely passed)._

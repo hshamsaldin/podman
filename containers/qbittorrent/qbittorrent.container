@@ -29,26 +29,23 @@ Pod=gluetun.pod
 NoNewPrivileges=true
 PodmanArgs=--memory=1g --pids-limit=400
 
-# --- UID mapping: deliberately NO keep-id anywhere in this pod (verified —
-#     see gluetun.pod's comment). gluetun.pod has no UserNS= line, so this
-#     container uses Podman's default rootless mapping: your real host UID
-#     1000 is NOT the same identity as container UID 1000 (PUID=1000 below) —
-#     it maps to a subuid-derived host UID instead (e.g. 100999). New files
-#     qBittorrent creates are self-consistent (it can always read/write its
-#     own), but PRE-EXISTING files owned by your real UID 1000 (anything you
-#     had before this container touched it — migrated downloads, a fresh
-#     bind-mounted config dir) need a ONE-TIME ownership fix so the container
-#     can see them as "its own":
-#       podman unshare chown -R 1000:1000 ~/containers/qbittorrent/config
-#       podman unshare chown -R 1000:1000 /data/downloads
-#     This re-points real on-disk ownership to whatever host UID the
-#     container resolves "1000:1000" to — after running it, those files won't
-#     show as owned by "hussein" in a normal `ls -la` anymore; use
-#     `podman unshare <cmd>` to inspect/manage them directly from the host
-#     when needed. This trade-off was chosen deliberately over UserNS=keep-id:
-#     gluetun's nftables kill-switch has no documented way to disable it and
-#     hard-fails under keep-id's fragmented UID mapping (confirmed live), so
-#     keep-id was dropped pod-wide rather than break the VPN tunnel.
+# --- UID mapping: deliberately NO UserNS= anywhere in this pod (verified —
+#     see gluetun.pod's comment: its VPN kill-switch hard-fails under
+#     keep-id, no way around it). We also tried UserNS=keep-id on just THIS
+#     container (joined via Pod=, not a direct netns join) hoping pod
+#     membership wouldn't force a shared userns — it doesn't help: rootless
+#     Podman rejects it identically (status=126, container never created;
+#     matches open upstream bugs containers/podman#26889, #22931). So this
+#     container uses Podman's default rootless mapping: container UID 0 maps
+#     to your real host UID, and PUID=1000 (below) maps to a derived subuid
+#     offset instead — NOT your real UID. Any path this container bind-mounts
+#     that already has real files on it (a migrated config dir, a downloads
+#     disk) needs that derived UID applied to it once. The exact number is
+#     host-specific — see docs/host-setup.md → "Finding a container's REAL
+#     host UID" for the formula/script and how to apply it (plain `chown` on
+#     a native filesystem; the mount's `uid=`/`gid=` option for NTFS/exFAT,
+#     since those fake ownership from the mount, not from real per-file
+#     metadata — `chown` is a silent no-op on them).
 EnvironmentFile=%h/containers/qbittorrent/.env
 Environment=WEBUI_PORT=8080
 

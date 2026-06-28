@@ -130,32 +130,104 @@ own Quadlet **`.pod`** instead, with every member container joining via
 
 **But check every pod member before adding `UserNS=keep-id` to the pod — a
 container that manages its own iptables/nftables (a VPN client, a firewall)
-can refuse to start under it (verified, no workaround found).** We tried
-exactly this for a VPN+downloader pod: `keep-id` on the pod fixed the
-downloader's file-ownership problem above, but the VPN container then failed
-outright — `ERROR creating iptables firewall: ... Permission denied (you must
-be root)` on every iptables backend, container exits immediately. This is not
-a missing capability or a config mistake: the kernel's nft "rule set
-generation id" check only trusts a single contiguous UID mapping starting at
-0 (what plain default rootless mapping gives you); `keep-id` splices your real
-UID into the middle of that range, producing a fragmented mapping nft
-rejects — and we confirmed via the VPN app's own source/docs that it has **no
-documented way to disable its internal firewall** to work around this. When
-that's the case, drop `UserNS=` from the pod entirely (default rootless
-mapping for everyone) and fix each member's pre-existing bind-mounted files
-individually instead:
+can refuse to start under it, and there's no per-member exception (verified,
+two ways, no workaround found).** We tried exactly this for a VPN+downloader
+pod:
+1. **`keep-id` on the pod** (so every member shares it): fixed the
+   downloader's file-ownership problem above, but the VPN container then
+   failed outright — `ERROR creating iptables firewall: ... Permission denied
+   (you must be root)` on every iptables backend, container exits immediately.
+   Checked the VPN app's own source/docs directly: **no documented way to
+   disable its internal firewall** exists to work around this.
+2. **`keep-id` on just the downloader** (still joined to the pod via `Pod=`,
+   not a direct netns join — hoping pod membership wouldn't force a shared
+   userns the way a direct join does): rejected identically to the original
+   direct-join conflict (`status=126`, container never created). Matches open
+   upstream bugs
+   [containers/podman#26889](https://github.com/containers/podman/issues/26889),
+   [#22931](https://github.com/containers/podman/issues/22931) — Quadlet's
+   handling of per-container `UserNS=` inside a pod is currently unreliable.
+
+This is not a missing capability or a config mistake: the kernel's nft "rule
+set generation id" check only trusts a single contiguous UID mapping starting
+at 0 (what plain default rootless mapping gives you); `keep-id` splices your
+real UID into the middle of that range, producing a fragmented mapping nft
+rejects, and Quadlet can't currently scope that mapping to just one pod
+member either. When a pod has any member like this, drop `UserNS=` from the
+pod entirely (and don't try it per-member) and fix each member's pre-existing
+bind-mounted files individually instead — **derive** the real host UID, don't
+guess or hardcode it:
 ```bash
-podman unshare chown -R <uid>:<gid> <path>
+./scripts/derive-rootless-uid.sh <container-uid>      # e.g. the image's PUID
+# -> prints the real host UID for THIS host's /etc/subuid range
+sudo chown -R <result>:<result> <path>                 # native filesystem
 ```
-This re-points real on-disk ownership to whatever host UID the container
-resolves `<uid>:<gid>` to — files the container creates *itself* afterward are
-self-consistent with no further action; only pre-existing data needs the
-one-time fix. The kill switch / isolation is unaffected either way — it's
-enforced structurally by the pod's shared netns and container lifecycle, not
-by any member's internal firewall rules. See
-[gluetun's README](../containers/gluetun) and
+This is the one fact that's host-specific (the number); the formula and the
+script that computes it are not — copy this repo to a fresh host and re-run
+the script there, never copy a number between hosts.
+
+**Foreign filesystems (NTFS/exFAT) need the *mount's* owner changed, not the
+files (verified — `chown` is a silent no-op on them).** `ntfs-3g`/`exfat` fake
+Unix ownership entirely from `/etc/fstab`'s `uid=`/`gid=` option; there's no
+real per-file ownership to `chown`. If the path above is on one of these, set
+that mount option to the derived UID instead, then **force a real remount**
+(see the warning below — don't trust `mount`/`findmnt`'s generic FUSE options
+line, it never reflects `ntfs-3g`'s internal uid/gid either way):
+```bash
+sudo systemctl daemon-reload
+sudo systemctl stop data.mount   # use the unit name systemd generated for your mountpoint
+ps aux | grep -i ntfs            # confirm the OLD mount.ntfs-3g process actually exited —
+                                  # a lazy/partial unmount can leave it running, silently
+                                  # serving the OLD uid/gid despite a "successful" remount
+sudo systemctl start data.mount
+ps aux | grep -i ntfs            # NOW confirm the new uid=/gid= appears in its command line
+```
+
+> ⚠️ **Never run `fuser -km <mountpoint>` to free a busy mount (learned the
+> hard way, live, on a production host).** `-m` can resolve to "every process
+> using this filesystem" far more broadly than the one stale process you're
+> after — it killed core system services (`sshd`, `systemd-journald`, the
+> rootless user session and every container under it) here, not just the
+> intended `ntfs-3g` process. The system survived (no reboot, no data loss),
+> but every running container had to be recovered afterward. To find what's
+> actually holding a mount open, use the **read-only** `lsof +D <mountpoint>`
+> or `fuser -v <mountpoint>` (no `-k`) first, and only kill the *specific PID*
+> you've confirmed is stale (`sudo kill <pid>`), never a broad `-k` sweep.
+
+See [gluetun's README](../containers/gluetun) and
 [qbittorrent's README](../containers/qbittorrent) for the full worked example,
 including how to connect a *future* container to the same shared pod.
+
+**Recovering a rootless session after something kills its backing processes
+(e.g. the `fuser -km` mistake above) — `podman system migrate` may itself
+crash; don't rely on it alone (verified live).** Symptom: every `podman`
+command fails with `invalid internal status, try resetting the pause process
+with "podman system migrate": open /run/user/<uid>/<name>.pid: no such file
+or directory`. What actually worked, in order:
+```bash
+# 1. podman's own suggested fix — try it, but it crashed with a SIGSEGV here
+#    while tearing down a container's network. If it crashes, move on to step 2;
+#    don't keep retrying it.
+podman system migrate
+
+# 2. The real culprit: the specific missing .pid file named in the error.
+#    Feed it a definitely-dead PID (NOT via `echo`, which appends a newline
+#    Podman's strconv.Atoi can't parse — use printf):
+printf '999999' > /run/user/<uid>/<name>.pid
+podman ps -a   # should now work — even if it still errors once more with
+               # "could not find any running process: no such process", that's
+               # PROGRESS (it parsed the file and checked liveness); it means
+               # the underlying systemd services are likely already fine.
+```
+In practice, `systemd --user` with `Restart=always` had already silently
+recovered every container in the background the whole time the CLI was
+broken — the corruption only blocked `podman`'s own listing/inspection
+commands, not the actual running services. Check `systemctl --user status
+<service>` directly; you may find everything is already healthy once the CLI
+itself stops erroring. Only reach for the more disruptive `podman system
+reset` (wipes Podman's container/pod/image bookkeeping, but never touches
+bind-mounted host data) if the lighter fixes above don't get `podman ps -a`
+working again.
 
 ### 6. Verify (the gate — don't proceed until this is green)
 

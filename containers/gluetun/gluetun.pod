@@ -1,20 +1,26 @@
 # Shared VPN pod. Owns the network namespace that gluetun and ANY number of
 # other containers can ride through — not just qBittorrent.
 #
-# NO UserNS=keep-id here (verified, deliberately) — see gluetun.container's
-# top comment for the full reason: gluetun's internal nftables kill-switch is
-# a HARD requirement (no documented way to disable it) and it refuses to run
-# under keep-id's fragmented UID mapping. Plain default rootless mapping
-# (no UserNS= line) keeps gluetun's firewall working. The cost: member
-# containers' bind-mounted files are NOT owned by your real host UID — see
-# qbittorrent.container's comment for the one-time `podman unshare chown` fix.
+# NO UserNS=keep-id here, on the pod OR on any member (verified, deliberately,
+# three different ways — see gluetun.container's top comment and
+# qbittorrent.container's UID-mapping comment for the full story).  gluetun's
+# internal nftables kill-switch is a HARD requirement (no documented way to
+# disable it) and refuses to run under keep-id's fragmented UID mapping —
+# tried at the pod level (broke gluetun) and per-member via Pod= (rejected
+# identically to a direct netns join, status=126). Plain default rootless
+# mapping (no UserNS= line) keeps gluetun's firewall working. The cost:
+# member containers' bind-mounted files are NOT owned by your real host UID —
+# see docs/host-setup.md for how to DERIVE (never hardcode) each member's
+# real UID and apply it directly (chown for native filesystems; the mount's
+# uid=/gid= for NTFS/exFAT).
 #
 # To route a FUTURE container's traffic through this VPN:
 #   1. In its <app>.container, add `Pod=gluetun.pod` and remove any
 #      `PublishPort=`/`Network=`/`UserNS=` of its own (the pod owns networking;
-#      do NOT add UserNS=keep-id to fix that container's file ownership —
-#      it'll break gluetun's firewall for the whole pod. Use `podman unshare
-#      chown` on that container's bind mounts instead).
+#      do NOT add UserNS=keep-id to fix that container's file ownership — it
+#      either breaks gluetun's firewall (pod-level) or fails outright
+#      (per-member, verified). Derive its real UID instead — see
+#      docs/host-setup.md).
 #   2. Add that app's port to PublishPort= below.
 #   3. Add `Requires=gluetun.service` / `After=gluetun.service` to its [Unit]
 #      (so it doesn't start before the tunnel container exists).
