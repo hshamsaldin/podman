@@ -1,23 +1,25 @@
-# Shared VPN pod. Owns the network + user namespace that gluetun and ANY
-# number of other containers can ride through — not just qBittorrent.
+# Shared VPN pod. Owns the network namespace that gluetun and ANY number of
+# other containers can ride through — not just qBittorrent.
 #
-# UserNS=keep-id lives HERE (once), not on individual member containers:
-# rootless Podman rejects UserNS=keep-id directly on a container that also
-# does Network=container:<other> (verified: status=126, container never
-# created). Pod-level keep-id sidesteps that — member containers just join
-# via Pod=gluetun.pod and inherit it, so their PUID/PGID-based file ownership
-# (bind-mounted config/downloads) still maps to your real host UID.
+# NO UserNS=keep-id here (verified, deliberately) — see gluetun.container's
+# top comment for the full reason: gluetun's internal nftables kill-switch is
+# a HARD requirement (no documented way to disable it) and it refuses to run
+# under keep-id's fragmented UID mapping. Plain default rootless mapping
+# (no UserNS= line) keeps gluetun's firewall working. The cost: member
+# containers' bind-mounted files are NOT owned by your real host UID — see
+# qbittorrent.container's comment for the one-time `podman unshare chown` fix.
 #
 # To route a FUTURE container's traffic through this VPN:
 #   1. In its <app>.container, add `Pod=gluetun.pod` and remove any
-#      `PublishPort=`/`Network=` of its own (the pod owns networking now).
+#      `PublishPort=`/`Network=`/`UserNS=` of its own (the pod owns networking;
+#      do NOT add UserNS=keep-id to fix that container's file ownership —
+#      it'll break gluetun's firewall for the whole pod. Use `podman unshare
+#      chown` on that container's bind mounts instead).
 #   2. Add that app's port to PublishPort= below.
 #   3. Add `Requires=gluetun.service` / `After=gluetun.service` to its [Unit]
 #      (so it doesn't start before the tunnel container exists).
-# No UserNS= needed on the new container — it inherits the pod's.
 [Pod]
 PodName=gluetun
-UserNS=keep-id
 
 # One line per app that rides this VPN. qBittorrent today; add more here as
 # you connect future containers (e.g. PublishPort=9117:9117 for a future app).

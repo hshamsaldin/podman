@@ -147,10 +147,15 @@ Rules:
 - **Rootless caveat:** a bind-mount file owned by host UID 1000 is **not** UID 1000
   inside the container — rootless Podman shifts UIDs into your subuid range. Use
   `UserNS=keep-id` so your host UID maps 1:1 into the container (then `PUID/PGID`
-  or `User=` match your real `id -u`/`id -g`). This is why jellyfin pins it
-  directly; qbittorrent gets it from the [gluetun](containers/gluetun) pod it
-  joins (per-container `UserNS=` conflicts with `Network=container:`/`Pod=`
-  membership in some combinations — verified live, see that container's Notes).
+  or `User=` match your real `id -u`/`id -g`). Jellyfin pins it directly. **Not
+  every container can**, though: [gluetun](containers/gluetun)'s pod runs with
+  **no** `UserNS=` at all — its VPN kill-switch (nftables) hard-fails under
+  `keep-id`'s fragmented UID mapping, with no documented way to disable it
+  (verified live, see that container's Notes). When a container's own
+  requirement conflicts with `keep-id`, that container loses the 1:1 mapping;
+  fix pre-existing bind-mounted files with `podman unshare chown -R <uid>:<gid>
+  <path>` instead (see [qbittorrent](containers/qbittorrent)'s Notes for the
+  worked example).
 - **Docker volumes do NOT carry over.** Podman has its own volume store; a
   container that used an external *Docker* volume (NetBird, Omada) needs its data
   migrated (see those READMEs) or a fresh setup. There is no shared volume namespace.
@@ -203,13 +208,19 @@ More rules:
   Joining another container's netns directly (`Network=container:<other>`)
   conflicts with `UserNS=keep-id` on the joining container — rootless Podman
   rejects the combination (verified: `status=126`, container never created).
-  Instead, give the namespace its own `.pod` unit with `UserNS=keep-id` set
-  **once** there, and have every member container join via `Pod=<name>.pod`
-  (no `UserNS=`/`Network=`/`PublishPort=` of its own — the pod owns those).
-  This is also how you connect a *future* container to an existing shared pod
-  (e.g. routing more traffic through [gluetun](containers/gluetun)): add
-  `Pod=gluetun.pod` + `Requires=`/`After=gluetun.service` to the new unit, and
-  add its port to the pod's `PublishPort=` list.
+  Give the namespace its own `.pod` unit instead, with every member container
+  joining via `Pod=<name>.pod` (no `Network=`/`PublishPort=` of its own — the
+  pod owns those). **`UserNS=keep-id` on that pod is not automatically safe**
+  — it's shared by every member, so if any one of them manages its own
+  iptables/nftables (a VPN client, a firewall), `keep-id` can make *that*
+  container refuse to start instead (verified live with
+  [gluetun](containers/gluetun) — no documented way to disable its firewall,
+  so the pod runs with no `UserNS=` at all, and members needing 1:1 file
+  ownership use `podman unshare chown` on pre-existing files instead). Decide
+  per pod, by checking whether any member fights `keep-id`, before adding it.
+  Connecting a *future* container to an existing shared pod is the same either
+  way: add `Pod=<name>.pod` + `Requires=`/`After=<owner>.service` to the new
+  unit, and add its port to the pod's `PublishPort=` list.
 
 ## 6. Upgrades — `podman auto-update`
 

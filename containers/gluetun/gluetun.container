@@ -47,20 +47,23 @@ Environment="VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh /scripts/qbt-port.sh {{PORT}
 # Encrypted DNS over TLS via Cloudflare (Quad9 DoT was reset on this route).
 Environment=DOT=on
 Environment=DOT_PROVIDERS=cloudflare
-# Disable gluetun's OWN internal iptables/nftables kill-switch (verified
-# required under UserNS=keep-id; do not remove). gluetun normally sets up its
-# own nftables DROP rules as defense-in-depth, but the kernel's nft "rule set
-# generation id" check needs genuine UID-0-owns-the-netns semantics that
-# keep-id's UID remapping doesn't satisfy — without this, gluetun fails to
-# start entirely: "ERROR creating iptables firewall: ... Permission denied
-# (you must be root)" (confirmed live, all three iptables backends rejected).
-# This does NOT remove the kill switch: it's enforced structurally by Podman/
-# systemd instead — when this container goes, its shared netns vanishes, and
-# Podman tears down every other container riding this pod along with it
-# (verified live: stopping gluetun removed qBittorrent's --rm container too).
-Environment=FIREWALL=off
-
 # --- networking: published on the POD (gluetun.pod), not here. ---
+#
+# NO UserNS=keep-id on this pod (verified, deliberate — see gluetun.pod's top
+# comment). gluetun manages its own internal nftables kill-switch and there is
+# NO documented or supported way to disable it (checked gluetun's own source +
+# wiki: no FIREWALL=off or equivalent exists). Under UserNS=keep-id, the
+# kernel's nft "rule set generation id" check rejects keep-id's fragmented UID
+# mapping (it only trusts a single contiguous range starting at 0, which
+# plain default rootless mapping provides but keep-id's "splice your real UID
+# into the middle" mapping does not) — gluetun fails outright: "ERROR creating
+# iptables firewall: ... Permission denied (you must be root)" on all three
+# iptables backends, then shuts itself down (confirmed live; not advisory —
+# fatal). The kill switch itself is unaffected by this choice: it's enforced
+# structurally by Podman/systemd regardless — when this container goes, the
+# shared netns vanishes, and Podman tears down every other container riding
+# this pod along with it (verified live: stopping gluetun removed
+# qBittorrent's --rm container too, not just its network).
 
 # --- storage: gluetun's own state + the qBittorrent port-sync script (lives
 #     in qbittorrent/'s folder since it's qBittorrent-specific tooling, but

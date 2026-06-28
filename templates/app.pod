@@ -1,17 +1,28 @@
 # Copy to containers/<owner>/<name>.pod ONLY if multiple containers need to
-# share one network + user namespace (e.g. a VPN tunnel other apps ride
-# through — see containers/gluetun for the worked example). Most containers
-# do NOT need this — use app.container alone instead.
+# share one network namespace (e.g. a VPN tunnel other apps ride through —
+# see containers/gluetun for the worked example). Most containers do NOT need
+# this — use app.container alone instead.
 #
-# UserNS=keep-id goes HERE, once, not on member containers: rootless Podman
-# rejects UserNS=keep-id directly on a container that also does
-# Network=container:<other> (verified: status=126, container never created).
+# UserNS=keep-id goes HERE, once, not on member containers, IF you use it at
+# all: rootless Podman rejects UserNS=keep-id directly on a container that
+# also does Network=container:<other> (verified: status=126, container never
+# created) — putting it on the pod instead avoids that specific conflict.
+#
+# BUT check first whether any member container manages its own
+# iptables/nftables (a VPN client, a firewall) — keep-id is shared by every
+# member, and such a container can refuse to start under it instead (verified
+# live with gluetun: no documented way to disable its firewall, kernel nft
+# checks reject keep-id's fragmented UID mapping). If so, leave UserNS=
+# unset entirely (Podman's default rootless mapping) and fix pre-existing
+# bind-mounted files per-container with:
+#   podman unshare chown -R <uid>:<gid> <path>
+#
 # Member containers join via `Pod=<name>.pod` in their own .container file and
 # inherit this pod's userns/network automatically — they should NOT set their
 # own UserNS=/Network=/PublishPort=.
 [Pod]
 PodName=app
-UserNS=keep-id
+# UserNS=keep-id   # uncomment ONLY if no member manages its own firewall
 
 # One line per port any member container needs published.
 PublishPort=127.0.0.1:8080:8080

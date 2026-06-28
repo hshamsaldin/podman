@@ -14,9 +14,12 @@ WireGuard tunnel — if the VPN drops, qBittorrent has no network (kill switch).
 
 ## Prerequisites
 
-- The [gluetun](../gluetun) container deployed first — it owns the pod, the
-  tunnel, and `UserNS=keep-id`. qBittorrent has nothing to configure VPN-side.
+- The [gluetun](../gluetun) container deployed first — it owns the pod and
+  the tunnel. qBittorrent has nothing to configure VPN-side.
 - A downloads location on the host for the `/downloads` mount.
+- This pod runs **without** `UserNS=keep-id` (gluetun's firewall hard-requires
+  it off — see [gluetun's README](../gluetun)), so any pre-existing files you
+  bind-mount in need a one-time ownership fix — see Deploy.
 
 ## Deploy
 
@@ -31,6 +34,13 @@ cp qbittorrent.container ~/.config/containers/systemd/
 # Mirror the non-interpolated bits into the unit (Quadlet won't read .env for these):
 #   qbittorrent.container: Volume=<downloads>:/downloads  (default /data/downloads)
 # And confirm gluetun.pod (in ../gluetun) publishes 8080 for this app.
+
+# ONE-TIME: this pod has no UserNS=keep-id (see Prerequisites), so any files
+# that already exist on the host (a migrated config dir, existing downloads)
+# need their ownership translated to what the container will see as
+# PUID:PGID — otherwise every read/write hits "Permission denied":
+podman unshare chown -R 1000:1000 ~/containers/qbittorrent/config
+podman unshare chown -R 1000:1000 /data/downloads   # match your real downloads path
 
 systemctl --user daemon-reload
 systemctl --user start gluetun qbittorrent
@@ -95,18 +105,24 @@ tar czf qbittorrent-$(date +%F).tar.gz -C ~/containers/qbittorrent/config .
   qBittorrent `inactive (dead)` until a manual `systemctl --user start
   qbittorrent`). If it's ever sitting inactive after a real gluetun blip:
   `systemctl --user reset-failed qbittorrent; systemctl --user start qbittorrent`.
-- **No `UserNS=` here at all (verified, Podman-specific — this is the whole
-  reason the pod exists).** The original design had qBittorrent join gluetun
-  directly via `Network=container:gluetun`, with `UserNS=keep-id` dropped
-  because rootless Podman rejects that combination (`status=126`, container
-  never created). But dropping `keep-id` meant qBittorrent's internal
-  `PUID=1000` landed on the rootless subuid offset (host UID `100999`) instead
-  of your real UID `1000` — every read/write to pre-existing downloaded files
-  got "Permission denied" (confirmed live on a real torrent). Moving
-  `UserNS=keep-id` to the **pod** (`gluetun.pod`) and having both containers
-  join via `Pod=` fixes this: the pod's userns is shared by every member, no
-  per-container conflict, and `PUID=1000` now correctly maps to your real host
-  UID `1000` again.
+- **No `UserNS=` anywhere in this pod — deliberate, not a workaround.**
+  Two earlier designs both failed: direct `Network=container:gluetun` rejects
+  `UserNS=keep-id` outright (`status=126`); pod-level `keep-id` let
+  qBittorrent map correctly, but then **gluetun's container wouldn't start at
+  all** — its internal nftables kill-switch hard-fails under `keep-id`'s
+  fragmented UID mapping, with no documented way to disable it (checked
+  gluetun's source/wiki directly — see [gluetun's README](../gluetun) for the
+  full story). Between "qBittorrent's files are owned by an unfamiliar UID"
+  and "the VPN container won't start," the VPN wins: this pod has no `UserNS=`
+  line, gluetun's firewall works, and qBittorrent's `PUID=1000` lands on the
+  rootless subuid offset (e.g. host UID `100999`) instead of your real UID
+  `1000`. **Consequence:** any file that already existed on the host before
+  this container touched it needs a one-time
+  `podman unshare chown -R 1000:1000 <path>` (see Deploy) so the container can
+  read/write it. Files qBittorrent creates *itself* going forward are
+  self-consistent — no ongoing friction, just that one-time fix for migrated
+  data, and `podman unshare <cmd>` for any future direct host-side poking at
+  those files (a plain `ls`/`mv`/`rm` as yourself won't see them as "yours").
 - **Ordering vs. health (Podman-specific).** Docker used `depends_on: condition:
   service_healthy`. Quadlet/systemd express ordering with `Requires=`/`After=` on
   `gluetun.service`, which guarantees gluetun's container (and the pod's netns)
@@ -128,8 +144,10 @@ tar czf qbittorrent-$(date +%F).tar.gz -C ~/containers/qbittorrent/config .
   init, would risk a crash-loop). `NoNewPrivileges` is kept. `--memory=1g` via
   `PodmanArgs` is discarded on a Pi until the memory cgroup is enabled
   (`cgroup_enable=memory cgroup_memory=1` in `/boot/firmware/cmdline.txt` + reboot).
-- **PUID/PGID** in `.env` must equal your real `id -u`/`id -g` — the pod's
-  `UserNS=keep-id` is what makes that mapping land correctly on the host.
+- **PUID/PGID** in `.env`: `1000:1000` is fine to leave as-is even though it
+  no longer maps to your real host UID (see the `UserNS=` note above) — it
+  just needs to be *consistent*, since the same value is what you chown
+  existing files to via `podman unshare`.
 
 ---
 _⚠️ UNTESTED on this host — Quadlet translation of the tested Docker stack

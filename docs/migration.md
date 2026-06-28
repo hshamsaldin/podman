@@ -115,33 +115,47 @@ shows up via `podman exec <ctr> env`, no error anywhere). Quote the *entire*
 assignment when the value has a space: `Environment="CMD=/bin/sh /script.sh {{ARG}}"`.
 
 **`UserNS=keep-id` + `Network=container:<other>` don't mix (verified) — use a
-`.pod`, don't just drop `keep-id`.** A container that joins another container's
-netns directly cannot also set up its own user namespace — rootless Podman
-fails the start with `status=126` and never creates the container (symptom:
-the unit's own `systemctl --user status` line already shows `status=126`
-before the app logs anything). The tempting quick fix is to drop `keep-id` and
-let the image's own PUID/PGID logic handle ownership — **don't**: without
-`keep-id`, the container's "UID 1000" maps to the rootless subuid offset (e.g.
-host UID `100999`), not your real UID `1000`, so it can no longer read/write
-any *pre-existing* bind-mounted files (confirmed live: a fully-downloaded
-torrent went "Errored" with "Permission denied" on every file). The correct
-fix is a Quadlet **`.pod`**: put `UserNS=keep-id` on the pod once, have every
-member container join via `Pod=<name>.pod` (no `UserNS=`/`Network=`/
-`PublishPort=` of its own), and PUID/PGID-based ownership maps to your real
-host UID again for every container in the pod. See
-[gluetun's README](../containers/gluetun) for the worked example, including
-how to connect a *future* container to the same shared pod.
+`.pod`.** A container that joins another container's netns directly cannot
+also set up its own user namespace — rootless Podman fails the start with
+`status=126` and never creates the container (symptom: the unit's own
+`systemctl --user status` line already shows `status=126` before the app logs
+anything). The tempting quick fix is to drop `keep-id` and let the image's own
+PUID/PGID logic handle ownership — **don't**: without `keep-id`, the
+container's "UID 1000" maps to the rootless subuid offset (e.g. host UID
+`100999`), not your real UID `1000`, so it can no longer read/write any
+*pre-existing* bind-mounted files (confirmed live: a fully-downloaded torrent
+went "Errored" with "Permission denied" on every file). Give the namespace its
+own Quadlet **`.pod`** instead, with every member container joining via
+`Pod=<name>.pod` (no `Network=`/`PublishPort=` of its own).
 
-**A container that manages its own iptables/nftables (a VPN client, a
-firewall) may refuse to start under `UserNS=keep-id` (verified).** The
-kernel's nft "rule set generation id" check needs genuine
-UID-0-owns-the-netns semantics that `keep-id`'s UID remapping doesn't satisfy.
-Symptom: the app's own log shows something like `Permission denied (you must
-be root)` from iptables/nftables, and the container exits immediately — this
-is the app failing, not Podman/Quadlet. If the app has a documented way to
-disable its *own* internal firewall management (gluetun: `FIREWALL=off`), use
-it — the kill switch / isolation is still enforced structurally by the pod's
-shared netns and container lifecycle, not by the app's internal rules.
+**But check every pod member before adding `UserNS=keep-id` to the pod — a
+container that manages its own iptables/nftables (a VPN client, a firewall)
+can refuse to start under it (verified, no workaround found).** We tried
+exactly this for a VPN+downloader pod: `keep-id` on the pod fixed the
+downloader's file-ownership problem above, but the VPN container then failed
+outright — `ERROR creating iptables firewall: ... Permission denied (you must
+be root)` on every iptables backend, container exits immediately. This is not
+a missing capability or a config mistake: the kernel's nft "rule set
+generation id" check only trusts a single contiguous UID mapping starting at
+0 (what plain default rootless mapping gives you); `keep-id` splices your real
+UID into the middle of that range, producing a fragmented mapping nft
+rejects — and we confirmed via the VPN app's own source/docs that it has **no
+documented way to disable its internal firewall** to work around this. When
+that's the case, drop `UserNS=` from the pod entirely (default rootless
+mapping for everyone) and fix each member's pre-existing bind-mounted files
+individually instead:
+```bash
+podman unshare chown -R <uid>:<gid> <path>
+```
+This re-points real on-disk ownership to whatever host UID the container
+resolves `<uid>:<gid>` to — files the container creates *itself* afterward are
+self-consistent with no further action; only pre-existing data needs the
+one-time fix. The kill switch / isolation is unaffected either way — it's
+enforced structurally by the pod's shared netns and container lifecycle, not
+by any member's internal firewall rules. See
+[gluetun's README](../containers/gluetun) and
+[qbittorrent's README](../containers/qbittorrent) for the full worked example,
+including how to connect a *future* container to the same shared pod.
 
 ### 6. Verify (the gate — don't proceed until this is green)
 

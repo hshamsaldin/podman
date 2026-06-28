@@ -29,15 +29,26 @@ Pod=gluetun.pod
 NoNewPrivileges=true
 PodmanArgs=--memory=1g --pids-limit=400
 
-# --- UID mapping: keep-id is set on gluetun.pod (shared by every container in
-#     it), NOT here — UserNS=keep-id directly on a container that also did
-#     Network=container:gluetun was rejected by rootless Podman (status=126,
-#     verified). The pod-level keep-id maps your real host UID 1000 into the
-#     pod once; the s6-init still does its own PUID/PGID remap to "uid 1000"
-#     internally, which now lands on the SAME host UID 1000 as your existing
-#     downloaded files (without this, it landed on the rootless subuid offset,
-#     e.g. 100999, and every read/write to pre-existing files got "Permission
-#     denied" — confirmed live on a real torrent).
+# --- UID mapping: deliberately NO keep-id anywhere in this pod (verified —
+#     see gluetun.pod's comment). gluetun.pod has no UserNS= line, so this
+#     container uses Podman's default rootless mapping: your real host UID
+#     1000 is NOT the same identity as container UID 1000 (PUID=1000 below) —
+#     it maps to a subuid-derived host UID instead (e.g. 100999). New files
+#     qBittorrent creates are self-consistent (it can always read/write its
+#     own), but PRE-EXISTING files owned by your real UID 1000 (anything you
+#     had before this container touched it — migrated downloads, a fresh
+#     bind-mounted config dir) need a ONE-TIME ownership fix so the container
+#     can see them as "its own":
+#       podman unshare chown -R 1000:1000 ~/containers/qbittorrent/config
+#       podman unshare chown -R 1000:1000 /data/downloads
+#     This re-points real on-disk ownership to whatever host UID the
+#     container resolves "1000:1000" to — after running it, those files won't
+#     show as owned by "hussein" in a normal `ls -la` anymore; use
+#     `podman unshare <cmd>` to inspect/manage them directly from the host
+#     when needed. This trade-off was chosen deliberately over UserNS=keep-id:
+#     gluetun's nftables kill-switch has no documented way to disable it and
+#     hard-fails under keep-id's fragmented UID mapping (confirmed live), so
+#     keep-id was dropped pod-wide rather than break the VPN tunnel.
 EnvironmentFile=%h/containers/qbittorrent/.env
 Environment=WEBUI_PORT=8080
 
