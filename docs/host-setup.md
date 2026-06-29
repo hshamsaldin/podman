@@ -3,8 +3,14 @@
 Do this once on a fresh host before deploying any container from this repo.
 Target: **rootless Podman + Quadlet** on Debian / Raspberry Pi OS.
 
-> ⚠️ UNTESTED on this host — the steps below are the standard rootless-Podman
-> bring-up, not yet run on the Pi. Verify each one and replace this note once done.
+Automates as [`scripts/podman.sh`](../scripts/podman.sh) — covers steps 1-4 and 6
+below interactively (run it, or follow the manual steps yourself). Step 5
+(shared proxy network) is prompted inside the script; step 7 (Docker data
+migration) is per-container and not automated.
+
+_Verified on: `debian` (Debian 13 Trixie, Podman 5.4.2), 2026-06-29 — every
+step below ran successfully via `scripts/podman.sh`._
+
 
 ## 1. Install Podman (need ≥ 4.4 for Quadlet)
 

@@ -299,7 +299,8 @@ podman/
 └── scripts/
     ├── update-all.sh            # podman auto-update + prune
     ├── measure-footprint.sh     # snapshot RAM/disk: Docker (before) vs Podman (after)
-    └── derive-rootless-uid.sh   # compute a container's real host UID (no UserNS= set)
+    ├── derive-rootless-uid.sh   # compute a container's real host UID (no UserNS= set)
+    └── podman.sh                # automates docs/host-setup.md end to end
 ```
 
 ## Measuring the switch (Docker → Podman footprint)
