@@ -1,0 +1,57 @@
+# NetBird — ROOTFUL variant for LAN-routing-peer use cases. See README's Notes
+# section ("Routing peer (LAN access) — requires rootful, not rootless") for
+# the full explanation of why the base rootless netbird.container cannot do
+# this (verified live: rootless NET_ADMIN is userns-scoped, not real host
+# capability, even with Network=host).
+#
+# Install (note the SYSTEM Quadlet directory, not the user one):
+#   sudo cp netbird-routing.container netbird-client.volume /etc/containers/systemd/netbird.container
+#   sudo cp netbird-client.volume /etc/containers/systemd/
+#   # edit /etc/containers/systemd/netbird.container: set NB_SETUP_KEY for first start
+#   sudo systemctl daemon-reload
+#   sudo systemctl start netbird          # do NOT `enable` — Quadlet units are
+#                                          # transient; [Install] below handles boot-start
+#
+# Also required on the host, independent of this unit:
+#   - net.ipv4.ip_forward=1 (see docs/host-setup.md)
+#   - sudo ufw default allow routed  — ufw's default FORWARD policy is DROP,
+#     which silently breaks the rootful Podman bridge's outbound traffic
+#     (verified live: management-server DNS lookups timed out until set).
+[Unit]
+Description=NetBird mesh VPN client (rootful — LAN-routing peer)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=docker.io/netbirdio/netbird:latest
+ContainerName=NetBird
+HostName=pi
+AutoUpdate=registry
+
+# --- security baseline ---
+NoNewPrivileges=true
+DropCapability=ALL
+AddCapability=NET_ADMIN
+# NET_RAW: NetBird needs raw sockets for ICMP-based connectivity checks.
+AddCapability=NET_RAW
+# SYS_ADMIN / SYS_RESOURCE: required per NetBird's official Docker docs for
+# eBPF use and to act as a routing peer with real host network/iptables access.
+# Only meaningful rootful — rootless capabilities are userns-scoped and cannot
+# grant real host-level routing regardless of which ones are added.
+AddCapability=SYS_ADMIN
+AddCapability=SYS_RESOURCE
+AddDevice=/dev/net/tun
+
+# --- first registration only: uncomment, set the key, start once, then remove ---
+# NOTE: rootful Podman has a separate volume store from rootless — this is a
+# fresh peer registration even if you already registered the rootless variant.
+# Environment=NB_SETUP_KEY=<your-setup-key>
+
+# --- storage: registration state in a named volume (reused on recreate) ---
+Volume=netbird-client.volume:/var/lib/netbird
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

@@ -9,7 +9,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=docker.io/mbentley/omada-controller:latest
+Image=docker.io/mbentley/omada-controller:6.2.10.17
 ContainerName=Omada
 AutoUpdate=registry
 Ulimit=nofile=4096:8192
