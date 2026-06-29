@@ -51,7 +51,7 @@ Expected (shape):
 ```
 Management: Connected
 Signal: Connected
-FQDN: pi.netbird.cloud
+FQDN: <hostname>.netbird.cloud
 NetBird IP: 100.x.x.x/16
 ```
 

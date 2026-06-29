@@ -18,6 +18,14 @@ Docker kept as instant rollback.
 > Each container README ends with a **Tested on** line recording the host + date
 > its commands were last verified.
 >
+> ## ⚠️ No real secrets or identifiers
+> Examples (README snippets, "Expected output" shapes, FQDNs, IPs) use
+> placeholders only -- `<hostname>`, `100.x.x.x/16`, `<your-setup-key>` -- never
+> real values, even when copied from genuinely verified output. A
+> [gitleaks](.github/workflows/secrets-scan.yml) scan runs on every push/PR and
+> fails the build on committed secrets/keys; it does not catch identifying
+> hostnames or IPs in prose, so review for those by eye before every commit.
+>
 > ### Conversion status: 5/5 verified live on at least one host
 > jellyfin, gluetun+qbittorrent, netbird, atvloadly, and omada are all migrated
 > and verified (real `Tested on:` lines in each README) -- every one of them
